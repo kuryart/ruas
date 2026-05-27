@@ -1,11 +1,3 @@
-use rustro_core::greet;
-use rustro_core::GreetPayload;
-
-#[tauri::command]
-fn tauri_greet(payload: GreetPayload) -> String {
-    greet(payload)
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -19,7 +11,6 @@ pub fn run() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![tauri_greet])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

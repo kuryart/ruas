@@ -1,3 +1,3 @@
-// fn main() {
-//     rustro_core::run();
-// }
+fn main() {
+    // ruas_core::run();
+}

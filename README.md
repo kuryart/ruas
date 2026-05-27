@@ -18,7 +18,7 @@ The core concept is to gather the main features of a productivity app: Contacts,
 - Tauri
 - Astro
 - SQLite (as an indexer)
-- Axum
+- Actix
 
 ## Platforms
 
@@ -28,12 +28,14 @@ The core concept is to gather the main features of a productivity app: Contacts,
 
 ## Structure
 
+```
 ruas/
 ├── core/           # system core
 ├── api/            # web api
 └── frontend/
    ├── src           # web frontend
    └── src-tauri/   # desktop/mobile
+```
 
 ## Custom Protocol
 
