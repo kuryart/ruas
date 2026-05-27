@@ -1,135 +1,135 @@
 # Ruas
 
-Ruas é um cross-platform, privacy-first, self-hosted, all-in-one app de produtividade. 
-O nome Ruas é a junção de Rust + Astro, pois o sistema é feito usando Rust (Tauri) e Astro.
-Ruas também significa Rapid Universal Annotation System.
-Em português, "ruas" significa "streets", o que remete às conexões (grafos) feitas pelo app.
+Ruas is a cross-platform, privacy-first, self-hosted, all-in-one productivity app. 
+The name Ruas is the combination of Rust + Astro, since the system is built using Rust (Tauri) and Astro.
+Ruas also stands for Rapid Universal Annotation System.
+In Portuguese, "ruas" means "streets", which references the connections (graphs) mapped out by the app.
 
-A ideia é reunir as principais funções de um app de produtividade: Contatos, Agenda, Calendário, Projetos, Notas e Email, tudo orientado a markdown, no estilo Obsidian, Notion, Logseq ou AnyType. O app oferecerá integrações com outros apps, plugins e integração com IA.
+The core concept is to gather the main features of a productivity app: Contacts, Agenda, Calendar, Projects, Notes, and Email, all oriented around Markdown—similar to Obsidian, Notion, Logseq, or AnyType. The app will feature integrations with other apps, plugins, and AI integration.
 
-## Modelo de negócio
+## Business Model
 
-- Plano self-hosted free
-- Plano pro com sync dos dispositivos em nuvem
-- Plano pro+ com sync dos dispositivos em nuvem e IA
+- Free self-hosted plan
+- Pro plan with cloud synchronization across devices
+- Pro+ plan with cloud synchronization across devices and AI
 
 ## Stack
 
 - Tauri
 - Astro
-- SQLite (como indexador)
-- Axum.
+- SQLite (as an indexer)
+- Axum
 
-## Plataformas
+## Platforms
 
 - Desktop
 - Mobile
-- Web (apenas do plano pro para cima)
+- Web (available for Pro plan and above)
 
-## Estrutura
+## Structure
 
 ruas/
-├── core/           # core do sistema
-├── api/             # api web
+├── core/           # system core
+├── api/            # web api
 └── frontend/
-   ├── src           # frontend web
-   └── src-tauri/ # desktop/mobile
+   ├── src           # web frontend
+   └── src-tauri/   # desktop/mobile
 
-## Protocolo próprio
+## Custom Protocol
 
-ruas://[módulo]/[evento]
+ruas://[module]/[event]
 
 ## Email
 
-O email client utiliza JMAP ou IMAP.
+The email client uses JMAP or IMAP.
 
-### Cache (SQLite) vs. Arquivamento (.eml / .md)
+### Cache (SQLite) vs. Archiving (.eml / .md)
 
-Para manter o sistema de arquivos limpo e o app rápido:
+To keep the file system clean and the app performant:
 
-1. O Ruas usa o JMAP para sincronizar os e-mails para o **SQLite local**. O SQLite é o banco de busca e leitura rápida.
-2. Quando o usuário quer "vincular" um e-mail a uma nota ou projeto:
-    - O Ruas gera um arquivo `.eml` em uma pasta específica (ex: `~/ruas/attachments/emails/`).
-    - Na nota Markdown, o link fica: `[Assunto do Email](ruas://email/id_do_arquivo)`.
+1. Ruas uses JMAP to synchronize emails directly into a **local SQLite database**. SQLite serves as the high-speed search and read database.
+2. When the user wants to "link" an email to a note or project:
+    - Ruas generates an `.eml` file in a specific folder (e.g., `~/ruas/attachments/emails/`).
+    - Inside the Markdown note, the link is structured as: `[Email Subject](ruas://email/file_id)`.
 
-### Sanitização de HTML e Segurança
+### HTML Sanitization and Security
 
-- Usar uma biblioteca de sanitização no Rust (como a `ammonia`) antes de passar o corpo do e-mail para o frontend.
-- **Isolamento:** Renderizar o corpo do e-mail em um `<iframe>` com o atributo `sandbox` ativado. Isso impede que qualquer rastreador de e-mail ou script acesse os cookies locais ou o sistema de arquivos através da ponte do Tauri.
+- Use a Rust sanitization library (such as `ammonia`) before passing the email body to the frontend.
+- **Isolation:** Render the email body inside an `<iframe>` with the `sandbox` attribute enabled. This prevents email trackers or malicious scripts from accessing local cookies or the file system through the Tauri bridge.
 
-### Busca (FTS5)
+### Search (FTS5)
 
-- O SQLite permite criar tabelas virtuais de busca rápida. O Rust vai indexar o _texto puro_ (convertendo o HTML do e-mail em Markdown/Text simplificado) no banco.
-- **Multilingual:** Usar `whatlang` para detectar a língua do e-mail e aplicar o _stemmer_ correto (português ou inglês) na indexação.
+- SQLite allows creating virtual tables for instant lookups. Rust will index the *plain text* (converting the email's HTML into simplified Markdown/Text) within the database.
+- **Multilingual:** Use `whatlang` to automatically detect the email's language and apply the correct stemmer (Portuguese, English, etc.) during indexation.
 
 ## Plugins 
 
-- WASM para lógica
-- JS para UI
+- WASM for core logic
+- JS for UI components
 
-## Contatos
+## Contacts
 
-- Integração com cardDAV
-- Buscar contato utilizando @ e criar link
-- Contatos serão notas markdown com dados no frontmatter
+- Integration with cardDAV
+- Search for contacts using the `@` handle to create active links
+- Contacts will be stored as Markdown notes containing metadata in the frontmatter
 
 ## Agenda
 
-- Integração com cardDAV
-- Tarefas serão notas markdown com dados no frontmatter
-- Para adicionar tarefa, pressionar ctrl+P para abrir a command palette, selecionar "Adicionar nota", digitar em linguagem natural, e o sistema identifica os wildcards e palavras-chave, semelhante ao Todoist ou ao Vikunja. Exemplo: "fazer tal coisa amanhã +projeto \*tag1 \*tag2", e o sistema cria uma entrada "- [ ] fazer tal coisa amanhã +projeto \*tag1 \*tag2", mas o sistema renderiza uma checkbox, "fazer tal coisa amanhã", um badge com "07/02", um badge com "tag1" e um badge com "tag2".
-- O sistema deve ser multilingual, e reconhecer termos em várias línguas.
+- Integration with cardDAV
+- Tasks will be stored as Markdown notes containing metadata in the frontmatter
+- To add a task, press `Ctrl+P` to open the command palette, select "Add note", and type in natural language. The system will parse wildcards and keywords, similarly to Todoist or Vikunja. Example: "do something tomorrow +project \*tag1 \*tag2". The system generates a raw entry: `- [ ] do something tomorrow +project *tag1 *tag2`, but renders a clean checkbox, the text "do something tomorrow", and specific badges for "07/02", "tag1", and "tag2".
+- The system must be multilingual, recognizing terms across multiple languages.
 
-## Calendário
+## Calendar
 
-- Integração com calDAV
-- Entradas no calendário serão notas markdown com dados no frontmatter
-- Opções na command palette para mover tarefas para o calendário e vice-versa
-- Criar múltiplos calendários, com opção de mesclar calendários em um só
+- Integration with calDAV
+- Calendar entries will be stored as Markdown notes containing metadata in the frontmatter
+- Command palette options to seamlessly move tasks to the calendar and vice versa
+- Ability to create multiple calendars, with an option to merge them into a single view
 
-## Notas
+## Notes
 
-- Sistema semelhante ao Obsidian, Notion, AnyType, Logseq.
+- Knowledge management workflow similar to Obsidian, Notion, AnyType, and Logseq.
 
-## Projetos
+## Projects
 
-- Projetos contém tasks, contatos, calendários, notas, e um dashboard.
+- Projects act as containers holding tasks, contacts, calendars, notes, and a dedicated dashboard.
 
 ## Sync
 
-- State-based (estilo Obsidian)
-- Criptografia E2EE.
+- State-based synchronization (Obsidian style)
+- End-to-End Encryption (E2EE)
 
-## Arquitetura
+## Architecture
 
 ### File System Watcher
 
-O Core precisa monitorar a pasta de notas. Sempre que um arquivo `.md` mudar externamente, o Core deve re-indexar os metadados (Frontmatter, tags, links) no SQLite de forma transparente.
+The Core must actively monitor the notes directory. Whenever a `.md` file is modified externally, the Core must transparently re-index the metadata (Frontmatter, tags, links) into the SQLite database.
 
-### Versionamento e Conflitos
+### Versioning and Conflicts
 
-Sistema last-write-wins (o último a escrever ganha), mas criar um `nota.conflicted.md`.
+A last-write-wins approach will be implemented, which gracefully handles collisions by spawning a duplicate `note.conflicted.md` file.
 
-### Gerenciamento de Anexos
+### Asset Management
 
-Definir uma pasta `_resources` ou `_assets`. O SQLite precisa indexar esses arquivos para que a busca por "Partitura" retorne o PDF, não apenas a nota que o cita.
+Assets will be mapped into a specific `_resources` or `_assets` folder. SQLite will index these non-Markdown files so that searching for "Score" returns the physical PDF asset, not just the note mentioning it.
 
-### Abstração do Protocolo `ruas://`
+### Abstraction of the `ruas://` Protocol
 
-Em vez de `ruas://nota/caminho/para/arquivo.md`, usar `ruas://entity/[UUID]`. O SQLite resolve onde esse UUID está no disco. Isso permite que o usuário renomeie pastas no SO sem quebrar os links dentro do app.
+Instead of pointing to raw paths like `ruas://note/path/to/file.md`, the app uses an abstract mapping: `ruas://entity/[UUID]`. SQLite maps where this UUID resides on the drive, allowing users to safely rename or move system folders without breaking internal app links.
 
 ### Plugin Host Context
 
-Como o frontend e o WASM se comunicam? Os plugins WASM devem rodar no Core para ter acesso a performance e segurança. O Frontend apenas solicita ao Core: "Execute a função X do plugin Y e me dê o resultado para eu renderizar".
+How do the frontend and WASM interact? WASM plugins run natively inside the Core container to guarantee performance and sandboxed security. The Frontend simply requests the Core: "Execute function X of plugin Y and return the payload for rendering".
 
-### Tipos de Conexão
+### Connection Types
 
-Os nós dos grafos gerados podem ter um tipo específico (Contato, Tarefa, Entrada no Calendário, Nota, Email, Projeto), e as conexões entre os nós também, exemplos:
+The graph nodes generated by the app can have specific types (Contact, Task, Calendar Entry, Note, Email, Project), and the edges connecting these nodes are typed as well, for example:
 
-- Mentions: Uma nota cita um @contato.
-- DependsOn: Uma task precisa de outra.
-- Origin: Um e-mail que gerou uma nota.
-- BelongsTo: Uma nota que faz parte de um +projeto
+- Mentions: A note references a `@contact`.
+- DependsOn: A task depends on the completion of another task.
+- Origin: An email thread that originated a specific note.
+- BelongsTo: A note that is assigned to a `+project`.
 
 ### Architecture
 
