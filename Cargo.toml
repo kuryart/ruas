@@ -1,6 +1,2 @@
 [workspace]
-members = [
-	"core",
-	"api",
-	"frontend/src-tauri", # Caminho para o seu crate Rust do Tauri
-]
+members = ["core", "api", "frontend/src-tauri"]

@@ -3,11 +3,11 @@
 version = 3
 
 [[package]]
-name = "Rustro"
+name = "Ruas"
 version = "0.1.0"
 dependencies = [
  "log",
- "rustro_core",
+ "ruas_core",
  "tauri",
  "tauri-build",
  "tauri-plugin-log",
@@ -3198,6 +3198,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruas_api"
+version = "0.1.0"
+dependencies = [
+ "actix-cors",
+ "actix-web",
+ "ruas_core",
+]
+
+[[package]]
+name = "ruas_core"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "rust_decimal"
 version = "1.37.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3226,23 +3243,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cfcb3a22ef46e85b45de6ee7e79d063319ebb6594faafcf1c225ea92ab6e9b92"
 dependencies = [
  "semver",
-]
-
-[[package]]
-name = "rustro_api"
-version = "0.1.0"
-dependencies = [
- "actix-cors",
- "actix-web",
- "rustro_core",
-]
-
-[[package]]
-name = "rustro_core"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
 ]
 
 [[package]]
