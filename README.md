@@ -1,4 +1,10 @@
-# Ruas
+<p align="center">
+  <img width="256" height="256" src="https://github.com/kuryart/ruas/blob/main/docs/ruas-icon.png" />
+</p>
+
+<h1 align="center">Ruas, all-in-one productivity app</h1>
+
+# Overview
 
 Ruas is a cross-platform, privacy-first, self-hosted, all-in-one productivity app. 
 The name Ruas is the combination of Rust + Astro, since the system is built using Rust (Tauri) and Astro.
