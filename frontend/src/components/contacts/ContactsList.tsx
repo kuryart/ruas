@@ -1,5 +1,7 @@
 import { For, Show, createEffect, createResource, createSignal } from 'solid-js';
+import { useI18n } from '../../i18n/context';
 import { invoke } from '../../utils/api';
+import { pushHistory } from '../../stores/historyStore';
 import { navigateToContact, openContactPermanent } from '../workspace/workspaceStore';
 
 interface ContactMeta {
@@ -25,6 +27,8 @@ function avatarColor(initials: string): string {
 }
 
 export default function ContactsList() {
+  const { t } = useI18n();
+
   const [query, setQuery] = createSignal('');
   const [contacts, { refetch }] = createResource<ContactMeta[]>(() =>
     invoke<ContactMeta[]>('list_contacts'),
@@ -66,6 +70,18 @@ export default function ContactsList() {
       const displayName = (contact.frontmatter['fn'] as string | undefined)
         ?? `${given} ${newFamily()}`.trim();
       openContactPermanent(contact.path, displayName);
+      pushHistory({
+        description: t('contacts-history-create'),
+        undo: async () => {
+          await invoke('delete_contact', { path: contact.path });
+          await refetch();
+        },
+        redo: async () => {
+          await invoke('save_contact', { contact });
+          await refetch();
+          openContactPermanent(contact.path, displayName);
+        },
+      });
     } finally {
       setCreating(false);
     }
@@ -83,39 +99,28 @@ export default function ContactsList() {
   };
 
   return (
-    <div style={{ display: 'flex', 'flex-direction': 'column', height: '100%', overflow: 'hidden' }}>
+    <div class="contact-list">
       {/* ── Header ────────────────────────────────────────────────────── */}
       <div style={{ padding: '12px 14px 8px', 'flex-shrink': '0', 'border-bottom': '1px solid var(--surface0)' }}>
         <div style={{ display: 'flex', 'align-items': 'center', 'justify-content': 'space-between', 'margin-bottom': '8px' }}>
-          <span style={{ 'font-size': '13px', 'font-weight': '600', color: 'var(--text)' }}>Contatos</span>
-          <button
-            title="Novo contato"
-            onClick={openForm}
-            style={{
-              color: 'var(--accent)', 'font-size': '18px', 'line-height': '1',
-              opacity: '0.7', padding: '0 2px',
-            }}
-            onMouseEnter={e => ((e.currentTarget as HTMLElement).style.opacity = '1')}
-            onMouseLeave={e => ((e.currentTarget as HTMLElement).style.opacity = '0.7')}
-          >
+          <span style={{ 'font-size': '13px', 'font-weight': '600', color: 'var(--text)' }}>
+            {t('contacts-header')}
+          </span>
+          <button class="list-new-btn" title={t('contacts-new-btn-title')} onClick={openForm}>
             +
           </button>
         </div>
 
         {/* Search bar */}
-        <div style={{
-          display: 'flex', 'align-items': 'center', gap: '6px',
-          background: 'var(--surface0)', 'border-radius': 'var(--radius)', padding: '5px 10px',
-        }}>
+        <div class="list-search">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2.5">
             <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
           </svg>
           <input
             type="text"
-            placeholder="Buscar contatos..."
+            placeholder={t('contacts-search-placeholder')}
             value={query()}
             onInput={e => setQuery((e.target as HTMLInputElement).value)}
-            style={{ flex: '1', 'font-size': '12px', color: 'var(--text)' }}
           />
           <Show when={query()}>
             <button onClick={() => setQuery('')} style={{ color: 'var(--muted)', 'font-size': '12px' }}>✕</button>
@@ -136,7 +141,7 @@ export default function ContactsList() {
             <input
               ref={givenRef}
               type="text"
-              placeholder="Nome"
+              placeholder={t('contacts-new-firstname-placeholder')}
               value={newGiven()}
               onInput={e => setNewGiven((e.target as HTMLInputElement).value)}
               onKeyDown={e => e.key === 'Escape' && cancelForm()}
@@ -148,7 +153,7 @@ export default function ContactsList() {
             />
             <input
               type="text"
-              placeholder="Sobrenome"
+              placeholder={t('contacts-new-lastname-placeholder')}
               value={newFamily()}
               onInput={e => setNewFamily((e.target as HTMLInputElement).value)}
               onKeyDown={e => e.key === 'Escape' && cancelForm()}
@@ -167,7 +172,7 @@ export default function ContactsList() {
                 opacity: creating() || !newGiven().trim() ? '0.5' : '1',
               }}
             >
-              {creating() ? '…' : '✓'}
+              {creating() ? t('contacts-new-submitting') : '✓'}
             </button>
             <button
               type="button"
@@ -184,13 +189,17 @@ export default function ContactsList() {
       <div style={{ flex: '1 1 0', 'overflow-y': 'auto', padding: '4px 0' }}>
         <Show
           when={!contacts.loading}
-          fallback={<div style={{ padding: '20px', 'text-align': 'center', color: 'var(--muted)', 'font-size': '12px' }}>Carregando…</div>}
+          fallback={
+            <div style={{ padding: '20px', 'text-align': 'center', color: 'var(--muted)', 'font-size': '12px' }}>
+              {t('contacts-loading')}
+            </div>
+          }
         >
           <Show
             when={filtered().length > 0}
             fallback={
               <div style={{ padding: '20px', 'text-align': 'center', color: 'var(--muted)', 'font-size': '12px' }}>
-                {query() ? 'Nenhum resultado' : 'Nenhum contato — clique em + para criar'}
+                {query() ? t('contacts-no-results') : t('contacts-empty')}
               </div>
             }
           >
@@ -199,9 +208,7 @@ export default function ContactsList() {
                 const color = avatarColor(contact.initials);
                 return (
                   <div
-                    style={{ display: 'flex', 'align-items': 'center', gap: '10px', padding: '7px 14px', cursor: 'pointer' }}
-                    onMouseEnter={e => ((e.currentTarget as HTMLElement).style.background = 'var(--surface0)')}
-                    onMouseLeave={e => ((e.currentTarget as HTMLElement).style.background = 'transparent')}
+                    class="contact-list-item"
                     onClick={e => {
                       if (e.ctrlKey || e.metaKey) {
                         openContactPermanent(contact.path, contact.display_name);

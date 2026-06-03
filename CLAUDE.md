@@ -55,3 +55,32 @@ frontend/src/              ← Astro + SolidJS UI
 
 ### Tauri `devUrl`
 Tauri's `beforeDevCommand` is `pnpm dev`, and it expects Astro at `http://localhost:4321`. Running `pnpm tauri dev` handles both automatically.
+
+## Frontend architecture (`frontend/src/`)
+
+The UI is **Astro + SolidJS**. Astro owns the shell (`pages/index.astro`, `layouts/Layout.astro`); all interactive code is SolidJS islands.
+
+### Transport abstraction
+`utils/PlatformProxy.ts` → `utils/api.ts` provides a single `invoke(cmd, args)` that routes to Tauri IPC (`@tauri-apps/api/core`) when `window.__TAURI__` is present, or to `ApiClient` (HTTP POST to `ruas_api`) otherwise. Always import from `utils/api.ts`, never call Tauri directly.
+
+### Workspace / panel system (`components/workspace/`)
+The multi-panel layout is a binary tree of splits stored in `workspaceStore.ts`. Key types:
+- `WorkspaceNode` — either a `LeafNode` (holds a `panelId`) or a `SplitNode` (direction + ratio + two children).
+- `Panel` — has an ordered `tabs: Tab[]` and an `activeTabId`.
+- `TabContent` — discriminated union; add a new variant here when creating a new module view.
+
+**Preview tab protocol** (Obsidian-style): single-click navigation reuses/replaces the current preview tab (shown in italics); Ctrl-click or the user starting to edit promotes the tab to permanent. Implement this same pattern for any new navigable entity.
+
+### Adding a new module view (checklist)
+1. Add `type: 'module-name-list'` and `type: 'module-name-detail'` variants to `TabContent` in `workspaceStore.ts`.
+2. Add `navigateTo<Entity>` / `open<Entity>Permanent` helpers in `workspaceStore.ts` (copy contacts pattern).
+3. Create `components/<module>/` with `<Module>List.tsx` and `<Module>Detail.tsx`.
+4. Register both in `PanelView.tsx`'s `TabContent` switch.
+5. Wire the sidebar button in `Sidebar.tsx` (`handleOpen` switch).
+6. Add i18n keys to `locales/en-US/<module>.ftl` and `locales/pt-BR/<module>.ftl`.
+
+### i18n
+Fluent (`.ftl` files under `src/locales/<locale>/`). One file per module. Access via `const { t } = useI18n()` from `i18n/context.tsx`. Add a new `.ftl` file and import it in `i18n/context.tsx` when adding a module.
+
+### Styling
+All colors come from CSS custom properties defined in `styles/global.css` (Catppuccin Mocha palette). Use `var(--base)`, `var(--mantle)`, `var(--surface0/1/2)`, `var(--text)`, `var(--subtext)`, `var(--muted)`, `var(--accent)`, etc. Never hardcode color values. Layout sizes: `--sidebar-w: 48px`, `--tabbar-h: 36px`, `--radius: 6px`.

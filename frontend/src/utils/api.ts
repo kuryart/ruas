@@ -29,3 +29,16 @@ export function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<
   if (isTauri()) return tauriInvoke<T>(cmd, args);
   return httpInvoke<T>(cmd, args);
 }
+
+/** Open an external URL in the user's default browser (desktop) or a new tab (web). */
+export async function openExternal(url: string): Promise<void> {
+  if (isTauri()) {
+    try {
+      await tauriInvoke('plugin:opener|open_url', { url });
+      return;
+    } catch (e) {
+      console.error('openExternal: opener plugin failed, falling back:', e);
+    }
+  }
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
