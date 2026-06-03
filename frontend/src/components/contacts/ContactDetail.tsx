@@ -1,5 +1,6 @@
 import { For, Show, createEffect, createResource, createSignal, on, onCleanup, type JSX } from 'solid-js';
 import { createStore, produce, reconcile } from 'solid-js/store';
+import { useI18n } from '../../i18n/context';
 import { invoke } from '../../utils/api';
 import { promotePreviewByPath, updateTabTitle } from '../workspace/workspaceStore';
 
@@ -79,7 +80,7 @@ function isValidBday(iso: string): boolean {
     const [, mm, dd] = iso.match(/^--(\d{2})-(\d{2})$/)!;
     const m = +mm, d = +dd;
     if (m < 1 || m > 12 || d < 1) return false;
-    return d <= new Date(2000, m, 0).getDate(); // 2000 = leap year, covers Feb 29
+    return d <= new Date(2000, m, 0).getDate();
   }
   return false;
 }
@@ -89,17 +90,9 @@ function isValidBday(iso: string): boolean {
 /** Key-value property row — left label column, right editable slot */
 function PropRow(props: { label: string; children: JSX.Element; alignTop?: boolean }) {
   return (
-    <div style={{
-      display: 'grid', 'grid-template-columns': '80px 1fr', 'align-items': props.alignTop ? 'start' : 'center',
-      'min-height': '28px', padding: '1px 12px 1px 16px',
-      'border-bottom': '1px solid var(--surface0)',
-    }}>
-      <span style={{ 'font-size': '11px', color: 'var(--muted)', 'padding-top': props.alignTop ? '6px' : '0', 'user-select': 'none' }}>
-        {props.label}
-      </span>
-      <div style={{ display: 'flex', 'flex-direction': 'column', gap: '2px', padding: '3px 0' }}>
-        {props.children}
-      </div>
+    <div class="prop-row" classList={{ top: !!props.alignTop }}>
+      <span class="prop-label">{props.label}</span>
+      <div class="prop-value">{props.children}</div>
     </div>
   );
 }
@@ -111,37 +104,23 @@ function InlineInput(props: {
 }) {
   return (
     <input
+      class="inline-input"
+      classList={{ mono: !!props.mono }}
       type={props.type ?? 'text'}
       value={props.value}
       placeholder={props.placeholder ?? '—'}
       onInput={e => props.onInput((e.target as HTMLInputElement).value)}
-      style={{
-        width: '100%', background: 'transparent', border: 'none',
-        'border-radius': '3px', padding: '2px 4px',
-        'font-size': '13px', color: 'var(--text)',
-        'font-family': props.mono ? "monospace" : 'inherit',
-        outline: 'none',
-      }}
-      onFocus={e => { const t = e.target as HTMLElement; t.style.background = 'var(--surface0)'; t.style.outline = '1px solid var(--accent)'; }}
-      onBlur={e => { const t = e.target as HTMLElement; t.style.background = 'transparent'; t.style.outline = 'none'; }}
     />
   );
 }
 
-/** Compact pill select for email/phone type */
-function TypePill(props: { value: string; options: string[]; onChange: (v: string) => void }) {
+/** Compact pill select for field type — accepts separate value/label pairs */
+interface TypeOption { value: string; label: string; }
+
+function TypePill(props: { value: string; options: TypeOption[]; onChange: (v: string) => void }) {
   return (
-    <select
-      value={props.value}
-      onChange={e => props.onChange((e.target as HTMLSelectElement).value)}
-      style={{
-        background: 'var(--surface0)', border: '1px solid var(--surface1)',
-        'border-radius': '10px', padding: '1px 6px', 'font-size': '10px',
-        color: 'var(--muted)', cursor: 'pointer', 'flex-shrink': '0',
-        'margin-right': '6px',
-      }}
-    >
-      <For each={props.options}>{o => <option value={o}>{o}</option>}</For>
+    <select class="type-pill" value={props.value} onChange={e => props.onChange((e.target as HTMLSelectElement).value)}>
+      <For each={props.options}>{o => <option value={o.value}>{o.label}</option>}</For>
     </select>
   );
 }
@@ -149,6 +128,8 @@ function TypePill(props: { value: string; options: string[]; onChange: (v: strin
 // ── Main component ─────────────────────────────────────────────────────────
 
 export default function ContactDetail(props: { path: string }) {
+  const { t } = useI18n();
+
   const [contact] = createResource(() => props.path, path => invoke<Contact>('read_contact', { path }));
 
   const [fm, setFm] = createStore<Fm>({});
@@ -165,6 +146,35 @@ export default function ContactDetail(props: { path: string }) {
   let bdayPickerRef: HTMLInputElement | undefined;
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
   let promoted = false;
+
+  // ── Translated option lists (reactive — update when locale changes) ─────
+
+  const emailTypes = (): TypeOption[] => [
+    { value: 'work',   label: t('field-type-work')   },
+    { value: 'home',   label: t('field-type-home')   },
+    { value: 'mobile', label: t('field-type-mobile') },
+    { value: 'other',  label: t('field-type-other')  },
+  ];
+  const phoneTypes = (): TypeOption[] => [
+    { value: 'mobile', label: t('field-type-mobile') },
+    { value: 'work',   label: t('field-type-work')   },
+    { value: 'home',   label: t('field-type-home')   },
+    { value: 'other',  label: t('field-type-other')  },
+  ];
+  const adrTypes = (): TypeOption[] => [
+    { value: 'home',  label: t('field-type-home')  },
+    { value: 'work',  label: t('field-type-work')  },
+    { value: 'other', label: t('field-type-other') },
+  ];
+
+  // ── Status bar labels (reactive) ─────────────────────────────────────
+
+  const statusLabel = (): Record<SaveStatus, { color: string; label: string }> => ({
+    saved:   { color: 'var(--green)',  label: t('contact-status-saved')   },
+    unsaved: { color: 'var(--yellow)', label: t('contact-status-unsaved') },
+    saving:  { color: 'var(--muted)',  label: t('contact-status-saving')  },
+    error:   { color: 'var(--red)',    label: t('contact-status-error')   },
+  });
 
   // Reset on path change
   createEffect(on(() => props.path, () => {
@@ -188,7 +198,6 @@ export default function ContactDetail(props: { path: string }) {
     }));
     setBody(c.body ?? '');
     setLoaded(true);
-    // auto-size textarea after render
     setTimeout(resizeBody, 0);
   });
 
@@ -237,7 +246,7 @@ export default function ContactDetail(props: { path: string }) {
 
   function setField<K extends keyof Fm>(key: K, value: Fm[K]) {
     setFm(produce(d => { (d as Record<string, unknown>)[key] = value; }));
-    if (key === 'fn' && typeof value === 'string') updateTabTitle(props.path, value || 'Sem nome');
+    if (key === 'fn' && typeof value === 'string') updateTabTitle(props.path, value || t('contact-detail-no-name'));
     scheduleSave();
   }
 
@@ -263,29 +272,22 @@ export default function ContactDetail(props: { path: string }) {
   function removeAdr(idx: number) { setFm(produce(d => { d.adr = d.adr?.filter((_, i) => i !== idx); })); scheduleSave(); }
 
   function addTag(raw: string) {
-    const t = raw.trim().replace(/^#/, '');
-    if (!t || fm.tags?.includes(t)) return;
-    setFm(produce(d => { d.tags = [...(d.tags ?? []), t]; }));
+    const tg = raw.trim().replace(/^#/, '');
+    if (!tg || fm.tags?.includes(tg)) return;
+    setFm(produce(d => { d.tags = [...(d.tags ?? []), tg]; }));
     setTagInput(''); setShowTagInput(false); scheduleSave();
   }
-  function removeTag(tag: string) { setFm(produce(d => { d.tags = d.tags?.filter(t => t !== tag); })); scheduleSave(); }
-
-  // ── Status ─────────────────────────────────────────────────────────────
-
-  const STATUS = {
-    saved:   { color: 'var(--green)',  label: '● Salvo' },
-    unsaved: { color: 'var(--yellow)', label: '● Modificado' },
-    saving:  { color: 'var(--muted)',  label: '◌ Salvando…' },
-    error:   { color: 'var(--red)',    label: '● Erro ao salvar' },
-  };
+  function removeTag(tag: string) { setFm(produce(d => { d.tags = d.tags?.filter(tg => tg !== tag); })); scheduleSave(); }
 
   // ── Render ─────────────────────────────────────────────────────────────
 
   return (
-    <div style={{ display: 'flex', 'flex-direction': 'column', height: '100%', overflow: 'hidden', background: 'var(--base)' }}>
+    <div class="contact-detail">
 
       <Show when={contact.loading && !loaded()}>
-        <div style={{ padding: '32px', color: 'var(--muted)', 'font-size': '12px' }}>Carregando…</div>
+        <div style={{ padding: '32px', color: 'var(--muted)', 'font-size': '12px' }}>
+          {t('contact-detail-loading')}
+        </div>
       </Show>
 
       <Show when={loaded()}>
@@ -314,47 +316,32 @@ export default function ContactDetail(props: { path: string }) {
               <div style={{ flex: '1', 'min-width': '0' }}>
                 {/* Name */}
                 <input
+                  class="contact-name"
                   type="text"
                   value={fm['fn'] ?? ''}
-                  placeholder="Nome completo"
+                  placeholder={t('contact-detail-name-placeholder')}
                   onInput={e => setField('fn', (e.target as HTMLInputElement).value)}
-                  style={{
-                    width: '100%', background: 'transparent', border: 'none',
-                    'font-size': '22px', 'font-weight': '700', color: 'var(--text)',
-                    padding: '0', outline: 'none', 'line-height': '1.3',
-                  }}
-                  onFocus={e => ((e.target as HTMLElement).style.color = 'var(--text)')}
                 />
                 {/* Cargo · Empresa */}
                 <div style={{ display: 'flex', gap: '6px', 'margin-top': '6px', 'align-items': 'center' }}>
                   <input
+                    class="contact-subfield"
+                    style={{ flex: '0 1 auto' }}
                     type="text"
                     value={fm.title ?? ''}
-                    placeholder="Cargo"
+                    placeholder={t('contact-detail-title-placeholder')}
                     onInput={e => setField('title', (e.target as HTMLInputElement).value)}
-                    style={{
-                      background: 'transparent', border: 'none', outline: 'none',
-                      'font-size': '13px', color: 'var(--subtext)', padding: '0',
-                      'min-width': '0', flex: '0 1 auto',
-                    }}
-                    onFocus={e => { const t = e.target as HTMLElement; t.style.background = 'var(--surface0)'; t.style.borderRadius = '3px'; t.style.padding = '1px 4px'; }}
-                    onBlur={e => { const t = e.target as HTMLElement; t.style.background = 'transparent'; t.style.padding = '0'; }}
                   />
                   <Show when={fm.title && fm.org}>
                     <span style={{ color: 'var(--surface2)', 'flex-shrink': '0' }}>·</span>
                   </Show>
                   <input
+                    class="contact-subfield"
+                    style={{ flex: '1' }}
                     type="text"
                     value={fm.org ?? ''}
-                    placeholder="Empresa"
+                    placeholder={t('contact-detail-org-placeholder')}
                     onInput={e => setField('org', (e.target as HTMLInputElement).value)}
-                    style={{
-                      background: 'transparent', border: 'none', outline: 'none',
-                      'font-size': '13px', color: 'var(--subtext)', padding: '0',
-                      'min-width': '0', flex: '1',
-                    }}
-                    onFocus={e => { const t = e.target as HTMLElement; t.style.background = 'var(--surface0)'; t.style.borderRadius = '3px'; t.style.padding = '1px 4px'; }}
-                    onBlur={e => { const t = e.target as HTMLElement; t.style.background = 'transparent'; t.style.padding = '0'; }}
                   />
                 </div>
               </div>
@@ -364,138 +351,92 @@ export default function ContactDetail(props: { path: string }) {
           {/* ── Properties (Obsidian-style) ──────────────────────────── */}
           <div style={{ 'border-bottom': '1px solid var(--surface0)' }}>
             {/* Collapsible header */}
-            <button
-              onClick={() => setPropsOpen(v => !v)}
-              style={{
-                display: 'flex', 'align-items': 'center', gap: '6px',
-                width: '100%', padding: '7px 16px',
-                'font-size': '11px', 'font-weight': '600', color: 'var(--muted)',
-                'text-transform': 'uppercase', 'letter-spacing': '0.07em',
-                background: 'transparent',
-              }}
-              onMouseEnter={e => ((e.currentTarget as HTMLElement).style.background = 'var(--surface0)')}
-              onMouseLeave={e => ((e.currentTarget as HTMLElement).style.background = 'transparent')}
-            >
+            <button class="props-header" onClick={() => setPropsOpen(v => !v)}>
               <span style={{ 'font-size': '9px', transition: 'transform 0.15s', transform: propsOpen() ? 'rotate(90deg)' : 'rotate(0deg)' }}>▶</span>
-              Propriedades
+              {t('contact-detail-props-header')}
             </button>
 
             <Show when={propsOpen()}>
               {/* Email */}
-              <PropRow label="email">
+              <PropRow label={t('contact-prop-email')}>
                 <For each={fm.email ?? []}>
                   {(e, i) => (
                     <div style={{ display: 'flex', 'align-items': 'center' }}>
-                      <TypePill value={e.type} options={['work','home','mobile','other']} onChange={v => setEmailField(i(), 'type', v)} />
-                      <InlineInput type="email" value={e.value} placeholder="email@exemplo.com" onInput={v => setEmailField(i(), 'value', v)} />
-                      <button onClick={() => removeEmail(i())} style={{ color: 'var(--muted)', padding: '2px 4px', 'flex-shrink': '0', opacity: '0.5' }}
-                        onMouseEnter={e => ((e.currentTarget as HTMLElement).style.opacity = '1')}
-                        onMouseLeave={e => ((e.currentTarget as HTMLElement).style.opacity = '0.5')}
-                      >✕</button>
+                      <TypePill value={e.type} options={emailTypes()} onChange={v => setEmailField(i(), 'type', v)} />
+                      <InlineInput type="email" value={e.value} placeholder={t('contact-email-placeholder')} onInput={v => setEmailField(i(), 'value', v)} />
+                      <button class="field-remove" onClick={() => removeEmail(i())}>✕</button>
                     </div>
                   )}
                 </For>
-                <button onClick={addEmail} style={{ 'font-size': '11px', color: 'var(--accent)', opacity: '0.6', padding: '2px 4px', 'align-self': 'flex-start' }}
-                  onMouseEnter={e => ((e.currentTarget as HTMLElement).style.opacity = '1')}
-                  onMouseLeave={e => ((e.currentTarget as HTMLElement).style.opacity = '0.6')}
-                >+ email</button>
+                <button class="field-add" onClick={addEmail}>{t('contact-add-email')}</button>
               </PropRow>
 
               {/* Telefone */}
-              <PropRow label="tel">
+              <PropRow label={t('contact-prop-tel')}>
                 <For each={fm.tel ?? []}>
-                  {(t, i) => (
+                  {(tel, i) => (
                     <div style={{ display: 'flex', 'align-items': 'center' }}>
-                      <TypePill value={t.type} options={['mobile','work','home','other']} onChange={v => setTelField(i(), 'type', v)} />
-                      <InlineInput type="tel" value={t.value} placeholder="+55 11 9 0000-0000" onInput={v => setTelField(i(), 'value', v)} />
-                      <button onClick={() => removeTel(i())} style={{ color: 'var(--muted)', padding: '2px 4px', 'flex-shrink': '0', opacity: '0.5' }}
-                        onMouseEnter={e => ((e.currentTarget as HTMLElement).style.opacity = '1')}
-                        onMouseLeave={e => ((e.currentTarget as HTMLElement).style.opacity = '0.5')}
-                      >✕</button>
+                      <TypePill value={tel.type} options={phoneTypes()} onChange={v => setTelField(i(), 'type', v)} />
+                      <InlineInput type="tel" value={tel.value} placeholder={t('contact-phone-placeholder')} onInput={v => setTelField(i(), 'value', v)} />
+                      <button class="field-remove" onClick={() => removeTel(i())}>✕</button>
                     </div>
                   )}
                 </For>
-                <button onClick={addTel} style={{ 'font-size': '11px', color: 'var(--accent)', opacity: '0.6', padding: '2px 4px', 'align-self': 'flex-start' }}
-                  onMouseEnter={e => ((e.currentTarget as HTMLElement).style.opacity = '1')}
-                  onMouseLeave={e => ((e.currentTarget as HTMLElement).style.opacity = '0.6')}
-                >+ telefone</button>
+                <button class="field-add" onClick={addTel}>{t('contact-add-phone')}</button>
               </PropRow>
 
               {/* Endereço */}
-              <PropRow label="endereço" alignTop>
+              <PropRow label={t('contact-prop-address')} alignTop>
                 <For each={fm.adr ?? []}>
                   {(a, i) => (
-                    <div style={{
-                      background: 'var(--mantle)', 'border-radius': '6px',
-                      border: '1px solid var(--surface0)', padding: '6px 8px',
-                      display: 'flex', 'flex-direction': 'column', gap: '4px',
-                      'margin-bottom': '4px',
-                    }}>
+                    <div class="adr-card">
                       <div style={{ display: 'flex', 'align-items': 'center', gap: '4px' }}>
-                        <TypePill value={a.type} options={['home','work','other']} onChange={v => setAdrField(i(), 'type', v)} />
+                        <TypePill value={a.type} options={adrTypes()} onChange={v => setAdrField(i(), 'type', v)} />
                         <div style={{ flex: '1' }}>
-                          <InlineInput value={a.street ?? ''} placeholder="Rua, número, complemento" onInput={v => setAdrField(i(), 'street', v)} />
+                          <InlineInput value={a.street ?? ''} placeholder={t('contact-address-street-placeholder')} onInput={v => setAdrField(i(), 'street', v)} />
                         </div>
-                        <button onClick={() => removeAdr(i())} style={{ color: 'var(--muted)', padding: '2px 4px', 'flex-shrink': '0', opacity: '0.5' }}
-                          onMouseEnter={e => ((e.currentTarget as HTMLElement).style.opacity = '1')}
-                          onMouseLeave={e => ((e.currentTarget as HTMLElement).style.opacity = '0.5')}
-                        >✕</button>
+                        <button class="field-remove" onClick={() => removeAdr(i())}>✕</button>
                       </div>
                       <div style={{ display: 'grid', 'grid-template-columns': '1fr 70px 110px', gap: '4px' }}>
-                        <InlineInput value={a.city ?? ''} placeholder="Cidade" onInput={v => setAdrField(i(), 'city', v)} />
-                        <InlineInput value={a.region ?? ''} placeholder="Estado" onInput={v => setAdrField(i(), 'region', v)} />
-                        <InlineInput value={a.code ?? ''} placeholder="CEP" onInput={v => setAdrField(i(), 'code', v)} />
+                        <InlineInput value={a.city ?? ''} placeholder={t('contact-address-city-placeholder')} onInput={v => setAdrField(i(), 'city', v)} />
+                        <InlineInput value={a.region ?? ''} placeholder={t('contact-address-region-placeholder')} onInput={v => setAdrField(i(), 'region', v)} />
+                        <InlineInput value={a.code ?? ''} placeholder={t('contact-address-code-placeholder')} onInput={v => setAdrField(i(), 'code', v)} />
                       </div>
-                      <InlineInput value={a.country ?? ''} placeholder="País" onInput={v => setAdrField(i(), 'country', v)} />
+                      <InlineInput value={a.country ?? ''} placeholder={t('contact-address-country-placeholder')} onInput={v => setAdrField(i(), 'country', v)} />
                     </div>
                   )}
                 </For>
-                <button onClick={addAdr} style={{ 'font-size': '11px', color: 'var(--accent)', opacity: '0.6', padding: '2px 4px', 'align-self': 'flex-start' }}
-                  onMouseEnter={e => ((e.currentTarget as HTMLElement).style.opacity = '1')}
-                  onMouseLeave={e => ((e.currentTarget as HTMLElement).style.opacity = '0.6')}
-                >+ endereço</button>
+                <button class="field-add" onClick={addAdr}>{t('contact-add-address')}</button>
               </PropRow>
 
               {/* URL */}
-              <PropRow label="url">
+              <PropRow label={t('contact-prop-url')}>
                 <InlineInput type="url" value={fm.url ?? ''} placeholder="https://..." onInput={v => setField('url', v)} />
               </PropRow>
 
               {/* Aniversário */}
-              <PropRow label="aniversário">
+              <PropRow label={t('contact-prop-birthday')}>
                 <div style={{ display: 'flex', 'align-items': 'center', gap: '4px', position: 'relative' }}>
                   <input
+                    class="bday-input"
                     type="text"
                     value={bdayEditing() ?? isoToDisplay(fm.bday ?? '')}
-                    placeholder="dd/mm/aaaa"
+                    placeholder={t('contact-birthday-placeholder')}
                     maxLength={10}
                     onKeyDown={e => {
                       if (e.ctrlKey || e.metaKey || e.altKey) return;
                       const nav = ['Backspace','Delete','ArrowLeft','ArrowRight','Tab','Home','End'].includes(e.key);
                       if (!nav && !/^[0-9\/\-\.]$/.test(e.key)) e.preventDefault();
                     }}
-                    onFocus={e => {
-                      setBdayEditing(isoToDisplay(fm.bday ?? ''));
-                      const t = e.target as HTMLElement;
-                      t.style.background = 'var(--surface0)';
-                      t.style.outline = '1px solid var(--accent)';
-                    }}
+                    onFocus={() => setBdayEditing(isoToDisplay(fm.bday ?? ''))}
                     onInput={e => setBdayEditing((e.target as HTMLInputElement).value)}
                     onBlur={e => {
                       const iso = displayToIso((e.target as HTMLInputElement).value);
                       setBdayEditing(null);
                       setField('bday', isValidBday(iso) ? iso || undefined : undefined);
-                      const t = e.target as HTMLElement;
-                      t.style.background = 'transparent';
-                      t.style.outline = 'none';
-                    }}
-                    style={{
-                      background: 'transparent', border: 'none', outline: 'none',
-                      'border-radius': '3px', padding: '2px 4px',
-                      'font-size': '13px', color: 'var(--text)', width: '110px',
                     }}
                   />
-                  {/* Picker nativo oculto — posicionado abaixo do botão */}
+                  {/* Picker nativo oculto */}
                   <input
                     ref={bdayPickerRef}
                     type="date"
@@ -507,11 +448,9 @@ export default function ContactDetail(props: { path: string }) {
                     }}
                   />
                   <button
-                    title="Calendário"
+                    class="field-remove"
+                    title={t('contact-birthday-calendar-title')}
                     onClick={() => (bdayPickerRef as HTMLInputElement & { showPicker?: () => void })?.showPicker?.()}
-                    style={{ color: 'var(--muted)', opacity: '0.5', padding: '2px 3px', 'flex-shrink': '0' }}
-                    onMouseEnter={e => ((e.currentTarget as HTMLElement).style.opacity = '1')}
-                    onMouseLeave={e => ((e.currentTarget as HTMLElement).style.opacity = '0.5')}
                   >
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                       <rect x="3" y="4" width="18" height="18" rx="2"/>
@@ -523,39 +462,27 @@ export default function ContactDetail(props: { path: string }) {
               </PropRow>
 
               {/* Tags */}
-              <PropRow label="tags" alignTop>
+              <PropRow label={t('contact-prop-tags')} alignTop>
                 <div style={{ display: 'flex', 'flex-wrap': 'wrap', gap: '4px', padding: '2px 0' }}>
                   <For each={fm.tags ?? []}>
                     {tag => (
-                      <span style={{
-                        display: 'inline-flex', 'align-items': 'center', gap: '3px',
-                        padding: '1px 8px', 'border-radius': '10px',
-                        background: 'var(--surface0)', color: 'var(--accent)',
-                        border: '1px solid var(--surface1)', 'font-size': '11px',
-                      }}>
+                      <span class="contact-tag">
                         #{tag}
-                        <button onClick={() => removeTag(tag)} style={{ color: 'var(--muted)', 'font-size': '9px', opacity: '0.6' }}
-                          onMouseEnter={e => ((e.currentTarget as HTMLElement).style.opacity = '1')}
-                          onMouseLeave={e => ((e.currentTarget as HTMLElement).style.opacity = '0.6')}
-                        >✕</button>
+                        <button class="contact-tag-remove" onClick={() => removeTag(tag)}>✕</button>
                       </span>
                     )}
                   </For>
                   <Show
                     when={showTagInput()}
                     fallback={
-                      <button onClick={() => { setShowTagInput(true); setTimeout(() => tagInputRef?.focus(), 0); }}
-                        style={{ 'font-size': '11px', color: 'var(--accent)', opacity: '0.6', padding: '1px 6px', 'border-radius': '10px', border: '1px dashed var(--surface1)' }}
-                        onMouseEnter={e => ((e.currentTarget as HTMLElement).style.opacity = '1')}
-                        onMouseLeave={e => ((e.currentTarget as HTMLElement).style.opacity = '0.6')}
-                      >+ tag</button>
+                      <button class="contact-tag-add" onClick={() => { setShowTagInput(true); setTimeout(() => tagInputRef?.focus(), 0); }}>+ tag</button>
                     }
                   >
                     <input
                       ref={tagInputRef}
                       type="text"
                       value={tagInput()}
-                      placeholder="nova-tag"
+                      placeholder={t('contact-tag-placeholder')}
                       onInput={e => setTagInput((e.target as HTMLInputElement).value)}
                       onKeyDown={e => {
                         if (e.key === 'Enter') { e.preventDefault(); addTag(tagInput()); }
@@ -577,44 +504,24 @@ export default function ContactDetail(props: { path: string }) {
           {/* ── Markdown notes ───────────────────────────────────────── */}
           <div style={{ padding: '20px 24px 40px' }}>
             <textarea
+              class="contact-notes"
               ref={bodyRef}
               value={body()}
-              placeholder="Escreva suas anotações em markdown…"
+              placeholder={t('contact-detail-notes-placeholder')}
               onInput={e => {
                 setBody((e.target as HTMLTextAreaElement).value);
                 resizeBody();
                 scheduleSave();
-              }}
-              style={{
-                width: '100%',
-                'min-height': '240px',
-                background: 'transparent',
-                border: 'none',
-                outline: 'none',
-                resize: 'none',
-                'font-size': '14px',
-                'line-height': '1.75',
-                color: 'var(--text)',
-                'font-family': "'JetBrains Mono', 'Fira Code', ui-monospace, monospace",
-                padding: '0',
-                overflow: 'hidden',
               }}
             />
           </div>
         </div>
 
         {/* ── Status bar ────────────────────────────────────────────── */}
-        <div style={{
-          'flex-shrink': '0', padding: '3px 16px',
-          'border-top': '1px solid var(--surface0)',
-          display: 'flex', 'justify-content': 'space-between', 'align-items': 'center',
-          background: 'var(--mantle)',
-        }}>
-          <span style={{ 'font-size': '11px', color: 'var(--muted)' }}>
-            {props.path.split('/').pop()}
-          </span>
-          <span style={{ 'font-size': '11px', color: STATUS[saveStatus()].color }}>
-            {STATUS[saveStatus()].label}
+        <div class="status-bar">
+          <span class="status-path">{props.path.split('/').pop()}</span>
+          <span class="status-label" style={{ color: statusLabel()[saveStatus()].color }}>
+            {statusLabel()[saveStatus()].label}
           </span>
         </div>
 

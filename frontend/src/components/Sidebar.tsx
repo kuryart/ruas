@@ -1,5 +1,8 @@
 import { type JSX } from 'solid-js';
-import { focusedPanelId, openContactsList, openModule } from './workspace/workspaceStore';
+import { useI18n } from '../i18n/context';
+import { setSettingsOpen } from '../stores/settingsStore';
+import { leftPanelModule, toggleLeftPanel } from '../stores/layoutStore';
+import { openModule } from './workspace/workspaceStore';
 
 // ── SVG icons (24×24, stroke-based) ───────────────────────────────────────
 
@@ -47,61 +50,67 @@ const icons: Record<string, JSX.Element> = {
   ),
 };
 
-const modules = [
-  { id: 'contacts', label: 'Contatos' },
-  { id: 'agenda',   label: 'Agenda'   },
-  { id: 'calendar', label: 'Calendário' },
-  { id: 'notes',    label: 'Notas'    },
-  { id: 'email',    label: 'Email'    },
-  { id: 'projects', label: 'Projetos' },
-] as const;
+const MODULE_IDS = ['contacts', 'agenda', 'calendar', 'notes', 'email', 'projects'] as const;
+type ModuleId = (typeof MODULE_IDS)[number];
 
-type ModuleId = (typeof modules)[number]['id'];
+// Modules with a dedicated left-drawer browser toggle the drawer; the rest open
+// directly in the workspace.
+const DRAWER_MODULES = new Set<ModuleId>(['notes', 'contacts']);
 
 function handleOpen(id: ModuleId, label: string) {
-  if (id === 'contacts') openContactsList();
+  if (DRAWER_MODULES.has(id)) toggleLeftPanel(id);
   else openModule(id, label);
+}
+
+// ── Sidebar button ─────────────────────────────────────────────────────────
+
+function SidebarBtn(props: {
+  title: string;
+  active?: boolean;
+  onClick: () => void;
+  children: JSX.Element;
+}) {
+  return (
+    <button class="sidebar-btn" classList={{ active: props.active }} title={props.title} onClick={props.onClick}>
+      <div>{props.children}</div>
+    </button>
+  );
 }
 
 // ── Component ──────────────────────────────────────────────────────────────
 
 export default function Sidebar() {
+  const { t } = useI18n();
+
   return (
-    <div
-      style={{
-        width: 'var(--sidebar-w)', 'flex-shrink': '0',
-        display: 'flex', 'flex-direction': 'column', 'align-items': 'center',
-        'padding-top': '8px', gap: '2px',
-        background: 'var(--crust)',
-        'border-right': '1px solid var(--surface0)',
-        'z-index': '10',
-      }}
-    >
-      {modules.map(m => (
-        <button
-          title={m.label}
-          onClick={() => handleOpen(m.id, m.label)}
-          style={{
-            width: '36px', height: '36px',
-            display: 'flex', 'align-items': 'center', 'justify-content': 'center',
-            'border-radius': 'var(--radius)',
-            color: 'var(--overlay0)',
-            transition: 'color 0.15s, background 0.15s',
-          }}
-          onMouseEnter={e => {
-            (e.currentTarget as HTMLElement).style.color = 'var(--text)';
-            (e.currentTarget as HTMLElement).style.background = 'var(--surface0)';
-          }}
-          onMouseLeave={e => {
-            (e.currentTarget as HTMLElement).style.color = 'var(--overlay0)';
-            (e.currentTarget as HTMLElement).style.background = 'transparent';
-          }}
-        >
-          <div style={{ width: '20px', height: '20px' }}>
-            {icons[m.id]}
-          </div>
-        </button>
-      ))}
+    <div class="sidebar">
+      {/* ── Module buttons ──────────────────────────────────────────── */}
+      {MODULE_IDS.map(id => {
+        const label = () => t(`module-${id}`);
+        return (
+          <SidebarBtn title={label()} active={leftPanelModule() === id} onClick={() => handleOpen(id, label())}>
+            {icons[id]}
+          </SidebarBtn>
+        );
+      })}
+
+      {/* ── Spacer ──────────────────────────────────────────────────── */}
+      <div style={{ flex: '1' }} />
+
+      {/* ── Divider ─────────────────────────────────────────────────── */}
+      <div style={{
+        width: '22px', height: '1px',
+        background: 'var(--surface0)',
+        'margin-bottom': '2px',
+      }} />
+
+      {/* ── Settings button ─────────────────────────────────────────── */}
+      <SidebarBtn title={t('settings-title')} onClick={() => setSettingsOpen(true)}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+      </SidebarBtn>
     </div>
   );
 }

@@ -6,6 +6,8 @@ import { createStore, produce } from 'solid-js/store';
 export type TabContent =
   | { type: 'contacts-list' }
   | { type: 'contact-detail'; contactPath: string }
+  | { type: 'notes-list' }
+  | { type: 'note-detail'; notePath: string }
   | { type: 'placeholder'; module: string };
 
 export interface Tab {
@@ -43,15 +45,11 @@ export type WorkspaceNode = LeafNode | SplitNode;
 // ── Initial state ──────────────────────────────────────────────────────────
 
 const MAIN = 'main';
-const initialTab: Tab = {
-  id: crypto.randomUUID(),
-  title: 'Contatos',
-  content: { type: 'contacts-list' },
-  preview: false,
-};
 
+// The workspace starts empty — module browsers live in the left drawer, so the
+// center shows a welcome placeholder until the user opens something.
 const [panels, setPanels] = createStore<Record<string, Panel>>({
-  [MAIN]: { id: MAIN, tabs: [initialTab], activeTabId: initialTab.id },
+  [MAIN]: { id: MAIN, tabs: [], activeTabId: null },
 });
 
 const [tree, setTree] = createSignal<WorkspaceNode>({ kind: 'leaf', panelId: MAIN });
@@ -81,9 +79,14 @@ function updateRatio(node: WorkspaceNode, splitId: string, ratio: number): Works
   return { ...node, first: updateRatio(node.first, splitId, ratio), second: updateRatio(node.second, splitId, ratio) };
 }
 
-function firstLeaf(node: WorkspaceNode): string | null {
+export function firstLeaf(node: WorkspaceNode): string | null {
   if (node.kind === 'leaf') return node.panelId;
   return firstLeaf(node.first);
+}
+
+export function lastLeaf(node: WorkspaceNode): string | null {
+  if (node.kind === 'leaf') return node.panelId;
+  return lastLeaf(node.second);
 }
 
 // ── Core tab actions ───────────────────────────────────────────────────────
@@ -249,4 +252,128 @@ export function openModule(module: string, label: string) {
   );
   if (existing) { setActiveTab(pid, existing.id); return; }
   openTab(pid, { id: crypto.randomUUID(), title: label, content: { type: 'placeholder', module }, preview: false });
+}
+
+// ── Per-panel navigation history (back/forward) ─────────────────────────────
+
+interface NavEntry { path: string; title: string }
+const [navStacks, setNavStacks] = createStore<Record<string, { entries: NavEntry[]; index: number }>>({});
+// Set while goBack/goForward drive navigation, so those moves aren't re-recorded.
+let suppressNav = false;
+
+function recordNav(panelId: string, path: string, title: string) {
+  if (suppressNav) return;
+  setNavStacks(produce(d => {
+    const s = d[panelId] ?? { entries: [], index: -1 };
+    if (s.entries[s.index]?.path === path) return;       // already current
+    const entries = s.entries.slice(0, s.index + 1);     // drop forward history
+    entries.push({ path, title });
+    d[panelId] = { entries, index: entries.length - 1 };
+  }));
+}
+
+export const canGoBack = (panelId: string) => (navStacks[panelId]?.index ?? 0) > 0;
+export const canGoForward = (panelId: string) => {
+  const s = navStacks[panelId];
+  return !!s && s.index < s.entries.length - 1;
+};
+
+export function goBack(panelId: string) {
+  const s = navStacks[panelId];
+  if (!s || s.index <= 0) return;
+  const entry = s.entries[s.index - 1];
+  setNavStacks(panelId, 'index', s.index - 1);
+  suppressNav = true;
+  navigateToNote(entry.path, entry.title, panelId);
+  suppressNav = false;
+}
+
+export function goForward(panelId: string) {
+  const s = navStacks[panelId];
+  if (!s || s.index >= s.entries.length - 1) return;
+  const entry = s.entries[s.index + 1];
+  setNavStacks(panelId, 'index', s.index + 1);
+  suppressNav = true;
+  navigateToNote(entry.path, entry.title, panelId);
+  suppressNav = false;
+}
+
+// ── Note navigation ────────────────────────────────────────────────────────
+
+export function navigateToNote(path: string, title: string, panelId?: string) {
+  const pid = panelId ?? focusedPanelId();
+  const panel = panels[pid];
+  if (!panel) return;
+  recordNav(pid, path, title);
+
+  const permanent = panel.tabs.find(
+    t => !t.preview && t.content.type === 'note-detail' &&
+         (t.content as { notePath: string }).notePath === path,
+  );
+  if (permanent) { setActiveTab(pid, permanent.id); return; }
+
+  const previewIdx = panel.tabs.findIndex(t => t.preview === true);
+  if (previewIdx !== -1) {
+    setPanels(produce(d => {
+      const p = d[pid];
+      p.tabs[previewIdx] = { id: p.tabs[previewIdx].id, title, content: { type: 'note-detail', notePath: path }, preview: true };
+      p.activeTabId = p.tabs[previewIdx].id;
+    }));
+  } else {
+    openTab(pid, { id: crypto.randomUUID(), title, content: { type: 'note-detail', notePath: path }, preview: true });
+  }
+}
+
+export function openNotePermanent(path: string, title: string) {
+  const pid = focusedPanelId();
+  const panel = panels[pid];
+  if (!panel) return;
+  recordNav(pid, path, title);
+
+  const existing = panel.tabs.find(
+    t => t.content.type === 'note-detail' &&
+         (t.content as { notePath: string }).notePath === path,
+  );
+  if (existing) {
+    if (existing.preview) {
+      const idx = panel.tabs.findIndex(t => t.id === existing.id);
+      if (idx !== -1) setPanels(pid, 'tabs', idx, 'preview', false);
+    }
+    setActiveTab(pid, existing.id);
+    return;
+  }
+
+  openTab(pid, { id: crypto.randomUUID(), title, content: { type: 'note-detail', notePath: path }, preview: false });
+}
+
+export function openNotesList(panelId?: string) {
+  const pid = panelId ?? focusedPanelId();
+  const existing = panels[pid]?.tabs.find(t => t.content.type === 'notes-list');
+  if (existing) { setActiveTab(pid, existing.id); return; }
+  openTab(pid, { id: crypto.randomUUID(), title: 'Notes', content: { type: 'notes-list' }, preview: false });
+}
+
+export function promoteNotePreviewByPath(notePath: string) {
+  for (const [pid, panel] of Object.entries(panels)) {
+    const idx = panel.tabs.findIndex(
+      t => t.preview === true && t.content.type === 'note-detail' &&
+           (t.content as { notePath: string }).notePath === notePath,
+    );
+    if (idx !== -1) {
+      setPanels(pid, 'tabs', idx, 'preview', false);
+      break;
+    }
+  }
+}
+
+export function updateNoteTabTitle(notePath: string, title: string) {
+  for (const [pid, panel] of Object.entries(panels)) {
+    const idx = panel.tabs.findIndex(
+      t => t.content.type === 'note-detail' &&
+           (t.content as { notePath: string }).notePath === notePath,
+    );
+    if (idx !== -1) {
+      setPanels(pid, 'tabs', idx, 'title', title);
+    }
+  }
 }
