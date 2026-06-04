@@ -9,6 +9,16 @@ notes-mode-raw = Raw
 notes-empty = Nenhuma nota ainda
 notes-delete-confirm = Excluir esta nota?
 
+# Menu de contexto
+notes-ctx-new-note = Nova nota
+notes-ctx-new-folder = Nova pasta
+notes-ctx-open = Abrir
+notes-ctx-open-new-tab = Abrir em nova aba
+notes-ctx-delete = Excluir
+notes-ctx-delete-folder-confirm = Excluir esta pasta e todo o seu conteúdo?
+notes-ctx-folder-name-prompt = Nome da pasta:
+notes-ctx-folder-default-name = Nova pasta
+
 notes-search-placeholder = Buscar notas…
 notes-loading = Carregando…
 notes-no-results = Nenhum resultado

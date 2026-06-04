@@ -1,6 +1,6 @@
 import { For, Show, createMemo } from 'solid-js';
 import { useI18n } from '../../i18n/context';
-import { type Heading, extractHeadings } from './editor/toc';
+import { type Heading, extractHeadings } from '../shared/editor/toc';
 
 /** Outline of a note's headings. Clicking a heading asks the parent to scroll
  *  the active view to it. */

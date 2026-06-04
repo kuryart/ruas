@@ -40,7 +40,9 @@ contact-add-address = + address
 # Input placeholders
 contact-email-placeholder = email@example.com
 contact-phone-placeholder = +1 (555) 000-0000
+contact-type-placeholder = type
 contact-address-street-placeholder = Street, number, unit
+contact-address-neighborhood-placeholder = Neighborhood
 contact-address-city-placeholder = City
 contact-address-region-placeholder = State
 contact-address-code-placeholder = ZIP

@@ -24,6 +24,7 @@ const builtins: LanguageDescription[] = [
   desc('sql',        [],       () => import('@codemirror/lang-sql').then(m => m.sql())),
   desc('json',       [],       () => import('@codemirror/lang-json').then(m => m.json())),
   desc('yaml',       ['yml'],  () => import('@codemirror/lang-yaml').then(m => m.yaml())),
+  desc('php',        [],       () => import('@codemirror/lang-php').then(m => m.php())),
 ];
 
 // Plugin-registered languages take precedence over built-ins.

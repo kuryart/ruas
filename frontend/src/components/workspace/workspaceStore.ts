@@ -1,4 +1,4 @@
-import { createSignal } from 'solid-js';
+import { batch, createSignal } from 'solid-js';
 import { createStore, produce } from 'solid-js/store';
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -107,28 +107,44 @@ export function openTab(panelId: string, tab: Tab) {
 }
 
 export function closeTab(panelId: string, tabId: string) {
-  let remaining = 0;
-  setPanels(produce(d => {
-    const p = d[panelId];
-    const idx = p.tabs.findIndex(t => t.id === tabId);
-    if (idx === -1) return;
-    p.tabs.splice(idx, 1);
-    remaining = p.tabs.length;
-    if (p.activeTabId === tabId) {
-      p.activeTabId = p.tabs.length > 0 ? p.tabs[Math.max(0, idx - 1)].id : null;
-    }
-  }));
+  const p = panels[panelId];
+  if (!p) return;
+  const idx = p.tabs.findIndex(t => t.id === tabId);
+  if (idx === -1) return;
 
-  if (remaining === 0) {
-    const next = removeLeaf(tree(), panelId);
-    if (next !== null) {
+  if (p.tabs.length > 1) {
+    // Other tabs remain — simple splice, no unmounting.
+    setPanels(produce(d => {
+      d[panelId].tabs.splice(idx, 1);
+      if (d[panelId].activeTabId === tabId)
+        d[panelId].activeTabId = d[panelId].tabs[Math.max(0, idx - 1)].id;
+    }));
+    return;
+  }
+
+  // Last tab removed.
+  const next = removeLeaf(tree(), panelId);
+  if (next !== null) {
+    // Remove panel from tree. PanelView unmounts from its current valid state
+    // (still has 1 tab), avoiding any stale-accessor issues in <Show>.
+    batch(() => {
       setTree(next);
       const leaf = firstLeaf(next);
       if (leaf) setFocusedPanelId(leaf);
-    } else {
-      const t: Tab = { id: crypto.randomUUID(), title: 'Nova aba', content: { type: 'placeholder', module: '' }, preview: false };
-      setPanels(produce(d => { d[panelId].tabs = [t]; d[panelId].activeTabId = t.id; }));
-    }
+    });
+  } else {
+    // Last panel in workspace — replace the tab with a placeholder atomically.
+    const placeholder: Tab = {
+      id: crypto.randomUUID(),
+      title: 'Nova aba',
+      content: { type: 'placeholder', module: '' },
+      preview: false,
+    };
+    setPanels(produce(d => {
+      d[panelId].tabs.splice(idx, 1);
+      d[panelId].tabs.push(placeholder);
+      d[panelId].activeTabId = placeholder.id;
+    }));
   }
 }
 

@@ -40,7 +40,9 @@ contact-add-address = + endereço
 # Placeholders de entrada
 contact-email-placeholder = email@exemplo.com
 contact-phone-placeholder = +55 11 9 0000-0000
+contact-type-placeholder = tipo
 contact-address-street-placeholder = Rua, número, complemento
+contact-address-neighborhood-placeholder = Bairro
 contact-address-city-placeholder = Cidade
 contact-address-region-placeholder = Estado
 contact-address-code-placeholder = CEP

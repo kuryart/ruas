@@ -1,0 +1,6 @@
+[toolchain]
+# core/ and api/ use edition = "2024", which requires rustc >= 1.85.
+# Pinning to "stable" keeps the toolchain current while remaining reproducible
+# across local machines, devcontainers, and CI — all read this file via rustup.
+channel = "stable"
+components = ["rustfmt", "clippy", "rust-analyzer"]

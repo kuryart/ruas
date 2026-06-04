@@ -216,6 +216,8 @@ pub fn run() {
             notes::list_blocks,
             notes::get_backlinks,
             notes::list_notes_tree,
+            notes::create_folder,
+            notes::delete_folder,
             // Appearance (user themes & snippets)
             appearance::list_appearance,
             appearance::read_appearance_css,

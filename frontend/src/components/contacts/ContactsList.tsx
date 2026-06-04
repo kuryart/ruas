@@ -2,6 +2,7 @@ import { For, Show, createEffect, createResource, createSignal } from 'solid-js'
 import { useI18n } from '../../i18n/context';
 import { invoke } from '../../utils/api';
 import { pushHistory } from '../../stores/historyStore';
+import { contactsVersion } from '../../stores/contactsStore';
 import { navigateToContact, openContactPermanent } from '../workspace/workspaceStore';
 
 interface ContactMeta {
@@ -30,8 +31,10 @@ export default function ContactsList() {
   const { t } = useI18n();
 
   const [query, setQuery] = createSignal('');
-  const [contacts, { refetch }] = createResource<ContactMeta[]>(() =>
-    invoke<ContactMeta[]>('list_contacts'),
+  // Re-fetch whenever any contact is mutated (ContactDetail calls invalidateContacts).
+  const [contacts, { refetch }] = createResource<ContactMeta[], number>(
+    contactsVersion,
+    () => invoke<ContactMeta[]>('list_contacts'),
   );
 
   // ── New contact form state ─────────────────────────────────────────────

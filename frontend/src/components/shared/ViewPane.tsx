@@ -1,19 +1,33 @@
 import { createMemo, createEffect } from 'solid-js';
-import { marked } from 'marked';
+import { marked, type Renderer } from 'marked';
 import 'katex/dist/katex.min.css';
 import katex from 'katex';
 import { openExternal } from '../../utils/api';
-import { embedKind, fillNoteEmbed } from './editor/embedRenderer';
-import { openNoteByTitle } from './editor/wikiLink';
 import { renderMermaid } from './editor/mermaidLoader';
 import { extractHeadings } from './editor/toc';
 import { renderTagsHtml } from './editor/tags';
+import { codeLanguages } from './editor/languageSupport';
+import { highlightBlock } from '../../utils/codeHighlight';
 
 export interface ViewApi {
   scrollToHeading: (slug: string) => void;
 }
 
-marked.setOptions({ gfm: true });
+// Languages handled by dedicated post-render passes (not Lezer highlighting).
+const PASS_THROUGH_LANGS = new Set(['mermaid']);
+
+const escapeHtml = (s: string) =>
+  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+const renderer: Partial<Renderer> = {
+  code({ text, lang }) {
+    const info = lang?.trim() ?? '';
+    const cls = info ? ` class="language-${escapeHtml(info)}"` : '';
+    return `<pre><code${cls}>${escapeHtml(text)}</code></pre>`;
+  },
+};
+
+marked.use({ gfm: true, renderer });
 
 const escapeAttr = (s: string) => s.replace(/"/g, '&quot;');
 
@@ -41,6 +55,14 @@ function extractMath(body: string): { text: string; math: string[] } {
   return { text, math };
 }
 
+// Minimal embed-kind classifier — inlined to avoid importing from notes/editor/.
+const IMAGE_EXT = /\.(png|jpe?g|gif|svg|webp|avif)$/i;
+const PDF_EXT = /\.pdf$/i;
+function embedKind(t: string): 'image' | 'pdf' | 'note' {
+  if (IMAGE_EXT.test(t)) return 'image';
+  if (PDF_EXT.test(t)) return 'pdf';
+  return 'note';
+}
 
 /** Replace `![[target]]` embeds with placeholders / inline media. */
 function renderEmbeds(html: string): string {
@@ -55,9 +77,9 @@ function renderEmbeds(html: string): string {
   });
 }
 
-/** Replace `[[target]]` / `[[target|alias]]` / `[[note^block]]` with clickable
- *  wiki-link anchors. Block refs carry `data-block` so the click can scroll. */
-function renderWikiLinks(html: string): string {
+/** Replace `[[target]]` / `[[target|alias]]` / `[[note^block]]` with anchors
+ *  when a click handler is provided, or inactive spans otherwise. */
+function renderWikiLinks(html: string, clickable: boolean): string {
   return html.replace(/(^|[^!])\[\[([^\]\n|]+)(?:\|([^\]\n]+))?\]\]/g, (_m, lead, target, alias) => {
     const raw = (target as string).trim();
     const caret = raw.indexOf('^');
@@ -65,11 +87,23 @@ function renderWikiLinks(html: string): string {
     const block = caret === -1 ? '' : raw.slice(caret + 1);
     const label = (alias ?? note).trim();
     const blockAttr = block ? ` data-block="${escapeAttr(block)}"` : '';
-    return `${lead}<a class="wiki-link" data-title="${escapeAttr(note)}"${blockAttr}>${label}</a>`;
+    if (clickable) {
+      return `${lead}<a class="wiki-link" data-title="${escapeAttr(note)}"${blockAttr}>${label}</a>`;
+    }
+    return `${lead}<span class="wiki-link inactive" data-title="${escapeAttr(note)}"${blockAttr}>${label}</span>`;
   });
 }
 
-export default function ViewPane(props: { body: string; onReady?: (api: ViewApi) => void }) {
+export default function ViewPane(props: {
+  body: string;
+  onReady?: (api: ViewApi) => void;
+  // Called when a wiki-link is clicked. Absence = links rendered as inactive spans.
+  onWikiLinkClick?: (title: string, permanent: boolean, blockId?: string) => void;
+  // Called to resolve `![[note]]` embeds. Absence = embeds left as empty placeholders.
+  resolveEmbed?: (el: HTMLElement, target: string) => void;
+  // When true the view renders inline (no fixed height, no own scroll).
+  autoGrow?: boolean;
+}) {
   let container!: HTMLDivElement;
 
   props.onReady?.({
@@ -81,11 +115,16 @@ export default function ViewPane(props: { body: string; onReady?: (api: ViewApi)
 
   const html = createMemo(() => {
     const { text, math } = extractMath(stripBlockIds(props.body));
-    const out = renderTagsHtml(renderWikiLinks(renderEmbeds(marked.parse(text, { async: false }) as string)));
+    const out = renderTagsHtml(
+      renderWikiLinks(
+        renderEmbeds(marked.parse(text, { async: false }) as string),
+        !!props.onWikiLinkClick,
+      ),
+    );
     return out.replace(/%%RUASMATH(\d+)%%/g, (_m, i) => math[+i] ?? '');
   });
 
-  // After each render, fill note-embed placeholders and render mermaid diagrams.
+  // After each render: assign heading ids, fill embeds, render mermaid, apply code highlighting.
   createEffect(() => {
     html(); // track
     queueMicrotask(() => {
@@ -95,10 +134,34 @@ export default function ViewPane(props: { body: string; onReady?: (api: ViewApi)
         if (headings[i]) el.id = headings[i].slug;
       });
 
-      container?.querySelectorAll<HTMLElement>('.embed-note[data-embed]').forEach(el => {
-        if (el.dataset.filled) return;
-        el.dataset.filled = '1';
-        void fillNoteEmbed(el, el.dataset.embed ?? '');
+      if (props.resolveEmbed) {
+        container?.querySelectorAll<HTMLElement>('.embed-note[data-embed]').forEach(el => {
+          if (el.dataset.filled) return;
+          el.dataset.filled = '1';
+          props.resolveEmbed!(el, el.dataset.embed ?? '');
+        });
+      }
+
+      container?.querySelectorAll<HTMLElement>('pre > code').forEach(el => {
+        const lang = el.className.match(/\blanguage-(\S+)/)?.[1];
+        if (!lang) return;
+        if (PASS_THROUGH_LANGS.has(lang)) return;
+
+        // Mermaid handled below; other pass-throughs skip highlighting.
+        const pre = el.closest('pre')!;
+
+        if (lang === 'mermaid') return;
+
+        if (el.dataset.highlighted) return;
+
+        const desc = codeLanguages(lang);
+        if (!desc) return;
+
+        void desc.load().then(support => {
+          if (el.dataset.highlighted) return; // guard against double-run
+          el.dataset.highlighted = '1';
+          el.innerHTML = highlightBlock(el.textContent ?? '', support.language.parser);
+        });
       });
 
       container?.querySelectorAll<HTMLElement>('code.language-mermaid').forEach(code => {
@@ -122,9 +185,9 @@ export default function ViewPane(props: { body: string; onReady?: (api: ViewApi)
 
   function onClick(e: MouseEvent) {
     const el = (e.target as HTMLElement).closest('.wiki-link, .embed-note') as HTMLElement | null;
-    if (el?.dataset.title) {
+    if (el?.dataset.title && props.onWikiLinkClick) {
       e.preventDefault();
-      void openNoteByTitle(el.dataset.title, e.ctrlKey || e.metaKey, el.dataset.block || undefined);
+      props.onWikiLinkClick(el.dataset.title, e.ctrlKey || e.metaKey, el.dataset.block || undefined);
       return;
     }
     // Plain markdown links: open externally instead of navigating the webview.
@@ -136,7 +199,10 @@ export default function ViewPane(props: { body: string; onReady?: (api: ViewApi)
   }
 
   return (
-    <div style={{ 'overflow-y': 'auto', height: '100%', 'box-sizing': 'border-box' }}>
+    <div style={props.autoGrow
+      ? { 'box-sizing': 'border-box' }
+      : { 'overflow-y': 'auto', height: '100%', 'box-sizing': 'border-box' }
+    }>
       <div
         ref={container}
         class="prose"

@@ -9,6 +9,16 @@ notes-mode-raw = Raw
 notes-empty = No notes yet
 notes-delete-confirm = Delete this note?
 
+# Context menu
+notes-ctx-new-note = New note
+notes-ctx-new-folder = New folder
+notes-ctx-open = Open
+notes-ctx-open-new-tab = Open in new tab
+notes-ctx-delete = Delete
+notes-ctx-delete-folder-confirm = Delete this folder and all its contents?
+notes-ctx-folder-name-prompt = Folder name:
+notes-ctx-folder-default-name = New folder
+
 notes-search-placeholder = Search notes…
 notes-loading = Loading…
 notes-no-results = No results

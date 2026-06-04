@@ -2,6 +2,7 @@ import 'katex/dist/katex.min.css';
 import katex from 'katex';
 import { Decoration, type DecorationSet, EditorView, WidgetType } from '@codemirror/view';
 import { type EditorState, type Extension, type Range, StateField } from '@codemirror/state';
+import { syntaxTree } from '@codemirror/language';
 
 // Live KaTeX rendering for `$inline$` and `$$block$$` math. A region renders to
 // a widget unless the selection touches it, in which case the raw source is
@@ -37,12 +38,26 @@ function build(state: EditorState): DecorationSet {
   const taken: Array<[number, number]> = [];
   const overlaps = (f: number, t: number) => taken.some(([a, b]) => f < b && t > a);
 
+  // Collect code node ranges so $ inside inline/fenced code is never parsed as math.
+  const codeRanges: Array<[number, number]> = [];
+  syntaxTree(state).iterate({
+    enter(node) {
+      if (node.name === 'InlineCode' || node.name === 'FencedCode' || node.name === 'CodeBlock') {
+        codeRanges.push([node.from, node.to]);
+        return false;
+      }
+    },
+  });
+  const inCode = (f: number, t: number) => codeRanges.some(([a, b]) => f < b && t > a);
+
   // Block math: $$ … $$ (may span multiple lines).
   const block = /\$\$([\s\S]+?)\$\$/g;
   let m: RegExpExecArray | null;
   while ((m = block.exec(text))) {
     if (text[m.index - 1] === '\\') continue; // escaped \$$
-    const expr = m[1].trim();
+    if (inCode(m.index, m.index + m[0].length)) continue;
+    // Strip ` ^blockId` markers (appended by the backend) before handing to KaTeX.
+    const expr = m[1].replace(/ \^[a-zA-Z0-9-]{4,12}\s*$/gm, '').trim();
     if (!expr) continue;
     const rawFrom = m.index;
     const rawTo = m.index + m[0].length;
@@ -62,6 +77,7 @@ function build(state: EditorState): DecorationSet {
   while ((m = inline.exec(text))) {
     if (text[m.index - 1] === '\\') continue;
     const from = m.index, to = m.index + m[0].length;
+    if (inCode(from, to)) continue;
     if (overlaps(from, to)) continue;
     if (touches(from, to)) { ranges.push(rawMark.range(from, to)); continue; }
     ranges.push(Decoration.replace({ widget: new LatexWidget(m[1].trim(), false) }).range(from, to));

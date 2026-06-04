@@ -1,0 +1,57 @@
+{
+  "name": "Ruas — Dev",
+  "build": {
+    "dockerfile": "Dockerfile",
+    // Context is the repo root so .cargo/config.toml and rust-toolchain.toml
+    // are visible during the image build if needed.
+    "context": "../.."
+  },
+  "workspaceFolder": "/workspace",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
+
+  // ── Persistent caches ───────────────────────────────────────────────────────
+  // Named volumes survive container rebuilds.
+  // Separating registry/git from the workspace keeps cargo fetch results cached.
+  // The pnpm store is content-addressable; node_modules is just symlinks into it.
+  // The Rust target/ dir is large (2-4 GB) and benefits from volume performance.
+  "mounts": [
+    "source=ruas-dev-cargo-registry,target=/home/dev/.cargo/registry,type=volume",
+    "source=ruas-dev-cargo-git,target=/home/dev/.cargo/git,type=volume",
+    "source=ruas-dev-pnpm-store,target=/home/dev/.local/share/pnpm/store,type=volume",
+    "source=ruas-dev-target,target=/workspace/target,type=volume"
+  ],
+
+  // ── Post-create setup ───────────────────────────────────────────────────────
+  // Runs once after the container is created.
+  // playwright install --with-deps uses sudo apt-get internally to pull
+  // the Chromium headless shell system dependencies.
+  "postCreateCommand": "cd frontend && pnpm install --frozen-lockfile && pnpm playwright install --with-deps chromium",
+
+  // ── VS Code ─────────────────────────────────────────────────────────────────
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "rust-lang.rust-analyzer",
+        "tamasfe.even-better-toml",
+        "ms-vscode.vscode-typescript-next",
+        "esbenp.prettier-vscode",
+        "ms-playwright.playwright"
+      ],
+      "settings": {
+        "rust-analyzer.cargo.features": "all",
+        "rust-analyzer.check.command": "clippy",
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "[rust]": {
+          "editor.defaultFormatter": "rust-lang.rust-analyzer",
+          "editor.formatOnSave": true
+        },
+        "[typescript]": {
+          "editor.defaultFormatter": "esbenp.prettier-vscode",
+          "editor.formatOnSave": true
+        }
+      }
+    }
+  },
+
+  "remoteUser": "dev"
+}

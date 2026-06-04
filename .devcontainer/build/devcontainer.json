@@ -1,0 +1,49 @@
+{
+  "name": "Ruas — Build",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": "../.."
+  },
+  "workspaceFolder": "/workspace",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
+
+  // ── Persistent caches ───────────────────────────────────────────────────────
+  // Separate named volumes from the dev container (different prefix) so both
+  // containers can run side-by-side without cache collisions.
+  // target/ as a volume is especially important here: Tauri debug builds are
+  // large (~3-4 GB) and Docker volumes are faster than bind mounts for writes.
+  "mounts": [
+    "source=ruas-build-cargo-registry,target=/home/dev/.cargo/registry,type=volume",
+    "source=ruas-build-cargo-git,target=/home/dev/.cargo/git,type=volume",
+    "source=ruas-build-pnpm-store,target=/home/dev/.local/share/pnpm/store,type=volume",
+    "source=ruas-build-target,target=/workspace/target,type=volume"
+  ],
+
+  // ── Post-create setup ───────────────────────────────────────────────────────
+  "postCreateCommand": "cd frontend && pnpm install --frozen-lockfile",
+
+  // ── Post-start: virtual display ─────────────────────────────────────────────
+  // Xvfb must be running before `pnpm tauri dev` is called.
+  // The & puts it in the background; the sleep gives it time to initialise.
+  // DISPLAY=:99 is set in the Dockerfile and referenced by WebKit2GTK.
+  "postStartCommand": "Xvfb :99 -screen 0 1280x800x24 -ac +extension GLX +render -noreset &>/tmp/xvfb.log & sleep 1",
+
+  // ── VS Code ─────────────────────────────────────────────────────────────────
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "rust-lang.rust-analyzer",
+        "tamasfe.even-better-toml",
+        "ms-vscode.vscode-typescript-next",
+        "esbenp.prettier-vscode"
+      ],
+      "settings": {
+        "rust-analyzer.cargo.features": "all",
+        "rust-analyzer.check.command": "clippy",
+        "terminal.integrated.defaultProfile.linux": "bash"
+      }
+    }
+  },
+
+  "remoteUser": "dev"
+}

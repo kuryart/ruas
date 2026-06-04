@@ -84,3 +84,22 @@ Fluent (`.ftl` files under `src/locales/<locale>/`). One file per module. Access
 
 ### Styling
 All colors come from CSS custom properties defined in `styles/global.css` (Catppuccin Mocha palette). Use `var(--base)`, `var(--mantle)`, `var(--surface0/1/2)`, `var(--text)`, `var(--subtext)`, `var(--muted)`, `var(--accent)`, etc. Never hardcode color values. Layout sizes: `--sidebar-w: 48px`, `--tabbar-h: 36px`, `--radius: 6px`.
+
+## Documentation
+
+Every feature implementation must be documented in `docs/dev/`. The index is at `docs/dev/00-index.md`. Existing documents cover: architecture (01), module system (02), core index (03), data model (04), Tauri shell (05), HTTP API (06), workspace/panels (07), stores (08), editor (09), i18n (10), styling (11), how-to new module (12), how-to new UI view (13).
+
+**When to create a new document:** any non-trivial feature that adds a new system, pattern, or constraint a future developer would need to understand. Name it with the next available two-digit prefix (e.g. `14-feature-name.md`) and add it to `00-index.md`.
+
+**When to update an existing document:** any change that affects an already-documented system (e.g. adding a command to the module system, changing a store contract, adding a new CSS variable).
+
+## Testing
+
+Every feature must ship with tests. Use the appropriate tier:
+
+- **Unit (Rust)** — pure functions with no I/O, in `#[cfg(test)] mod tests` at the bottom of the source file. Use `proptest` for round-trip invariants on parse/serialize functions.
+- **Integration (Rust)** — full command pipeline through `ModuleRegistry` against a `TempDir` vault, in `core/tests/integration.rs`.
+- **Unit (TypeScript)** — pure utility functions and store logic, colocated as `*.test.ts` alongside the source file, run with `pnpm test` (Vitest).
+- **E2E** — critical user-facing flows in `frontend/e2e/*.spec.ts`, run with `pnpm test:e2e` (Playwright). Mock all API calls via `page.route()`; no real backend required. Add shared mock helpers to `frontend/e2e/mock-api.ts`.
+
+The CI runs all tiers on every push (`cargo test -p ruas_core`, `pnpm test`, `pnpm test:e2e`). All tests must pass before merging.

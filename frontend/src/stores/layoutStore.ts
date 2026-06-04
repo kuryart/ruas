@@ -1,5 +1,5 @@
 import { createSignal } from 'solid-js';
-import type { Heading } from '../components/notes/editor/toc';
+import type { Heading } from '../components/shared/editor/toc';
 
 // Module identifier whose content the left drawer is showing (matches the
 // sidebar icon ids: 'notes', 'contacts', …). `null` → drawer hidden.
