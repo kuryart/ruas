@@ -104,8 +104,22 @@ pub fn list_notes_tree(
     serde_json::from_value(result).map_err(|e| e.to_string())
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────────
+#[tauri::command]
+pub fn create_folder(
+    name: String,
+    state: tauri::State<VaultState>,
+    registry: tauri::State<RegistryState>,
+) -> Result<String, String> {
+    let result = dispatch(&state, &registry, "create_folder", serde_json::json!({ "name": name }))?;
+    serde_json::from_value(result).map_err(|e| e.to_string())
+}
 
-pub fn notes_dir(vault_path: &std::path::Path) -> std::path::PathBuf {
-    vault_path.join("notes")
+#[tauri::command]
+pub fn delete_folder(
+    path: String,
+    state: tauri::State<VaultState>,
+    registry: tauri::State<RegistryState>,
+) -> Result<(), String> {
+    dispatch(&state, &registry, "delete_folder", serde_json::json!({ "path": path }))?;
+    Ok(())
 }

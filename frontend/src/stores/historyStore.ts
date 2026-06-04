@@ -34,3 +34,8 @@ export async function redoNext() {
   setFuture(f => f.slice(1));
   setPast(p => [...p, cmd]);
 }
+
+export function clearHistory() {
+  setPast([]);
+  setFuture([]);
+}

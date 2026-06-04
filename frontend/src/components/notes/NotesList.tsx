@@ -3,6 +3,8 @@ import { useI18n } from '../../i18n/context';
 import { invoke } from '../../utils/api';
 import { pushHistory } from '../../stores/historyStore';
 import { navigateToNote, openNotePermanent } from '../workspace/workspaceStore';
+import ContextMenu, { type ContextMenuItem } from '../shared/ContextMenu';
+import ConfirmDialog from '../shared/ConfirmDialog';
 
 interface NoteMeta {
   path: string;
@@ -53,11 +55,18 @@ function openNote(path: string, title: string, permanent: boolean) {
   else navigateToNote(path, title);
 }
 
+type CtxTarget =
+  | { kind: 'empty' }
+  | { kind: 'note'; path: string; title: string }
+  | { kind: 'folder'; path: string };
+
 export default function NotesList() {
   const { t, locale } = useI18n();
   const [query, setQuery] = createSignal('');
   const [creating, setCreating] = createSignal(false);
   const [collapsed, setCollapsed] = createSignal<Set<string>>(loadCollapsed());
+  const [ctxMenu, setCtxMenu] = createSignal<{ x: number; y: number; target: CtxTarget } | null>(null);
+  const [confirmState, setConfirmState] = createSignal<{ message: string; onConfirm: () => void } | null>(null);
 
   const [notes, { refetch: refetchNotes }] = createResource<NoteMeta[]>(() => invoke<NoteMeta[]>('list_notes'));
   const [tree, { refetch: refetchTree }] = createResource<TreeNode[]>(() => invoke<TreeNode[]>('list_notes_tree'));
@@ -91,6 +100,70 @@ export default function NotesList() {
     }
   }
 
+  async function createFolder() {
+    const name = window.prompt(t('notes-ctx-folder-name-prompt'), t('notes-ctx-folder-default-name'));
+    if (!name?.trim()) return;
+    try {
+      await invoke('create_folder', { name: name.trim() });
+      await refetch();
+    } catch (e) {
+      window.alert(String(e));
+    }
+  }
+
+  function deleteNote(path: string) {
+    setCtxMenu(null);
+    setConfirmState({
+      message: t('notes-delete-confirm'),
+      onConfirm: async () => {
+        setConfirmState(null);
+        await invoke('delete_note', { path });
+        await refetch();
+      },
+    });
+  }
+
+  function deleteFolder(path: string) {
+    setCtxMenu(null);
+    setConfirmState({
+      message: t('notes-ctx-delete-folder-confirm'),
+      onConfirm: async () => {
+        setConfirmState(null);
+        try {
+          await invoke('delete_folder', { path });
+          await refetch();
+        } catch (e) {
+          window.alert(String(e));
+        }
+      },
+    });
+  }
+
+  function openCtxMenu(e: MouseEvent, target: CtxTarget) {
+    e.preventDefault();
+    e.stopPropagation();
+    setCtxMenu({ x: e.clientX, y: e.clientY, target });
+  }
+
+  function ctxItems(): ContextMenuItem[] {
+    const ctx = ctxMenu();
+    if (!ctx) return [];
+    switch (ctx.target.kind) {
+      case 'empty': return [
+        { label: t('notes-ctx-new-note'), action: createNote },
+        { label: t('notes-ctx-new-folder'), action: createFolder },
+      ];
+      case 'folder': return [
+        { label: t('notes-ctx-delete'), action: () => deleteFolder((ctx.target as { kind: 'folder'; path: string }).path), danger: true },
+      ];
+      case 'note': return [
+        { label: t('notes-ctx-open'), action: () => { const n = ctx.target as { kind: 'note'; path: string; title: string }; navigateToNote(n.path, n.title); } },
+        { label: t('notes-ctx-open-new-tab'), action: () => { const n = ctx.target as { kind: 'note'; path: string; title: string }; openNotePermanent(n.path, n.title); } },
+        { label: t('notes-ctx-delete'), action: () => deleteNote((ctx.target as { kind: 'note'; path: string; title: string }).path), danger: true },
+      ];
+    }
+  }
+
   const filtered = () => {
     const q = query().toLowerCase();
     return (notes() ?? []).filter(n =>
@@ -109,6 +182,7 @@ export default function NotesList() {
             class="note-tree-item"
             style={{ 'padding-left': pad() }}
             onClick={e => openNote(p.node.path, p.node.name, e.ctrlKey || e.metaKey)}
+            onContextMenu={e => openCtxMenu(e, { kind: 'note', path: p.node.path, title: p.node.name })}
           >
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2" style={{ 'flex-shrink': '0' }}>
               <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
@@ -121,6 +195,7 @@ export default function NotesList() {
           class="note-tree-folder"
           style={{ 'padding-left': pad() }}
           onClick={() => toggleDir(p.node.path)}
+          onContextMenu={e => openCtxMenu(e, { kind: 'folder', path: p.node.path })}
         >
           <span style={{ 'font-size': '9px', color: 'var(--muted)', width: '10px', 'flex-shrink': '0' }}>
             {collapsed().has(p.node.path) ? '▸' : '▾'}
@@ -135,7 +210,22 @@ export default function NotesList() {
   };
 
   return (
-    <div class="note-list">
+    <div class="note-list" onContextMenu={e => openCtxMenu(e, { kind: 'empty' })}>
+      <Show when={ctxMenu()}>
+        <ContextMenu
+          x={ctxMenu()!.x}
+          y={ctxMenu()!.y}
+          items={ctxItems()}
+          onClose={() => setCtxMenu(null)}
+        />
+      </Show>
+      <Show when={confirmState()}>
+        <ConfirmDialog
+          message={confirmState()!.message}
+          onConfirm={confirmState()!.onConfirm}
+          onCancel={() => setConfirmState(null)}
+        />
+      </Show>
       {/* Header */}
       <div style={{ padding: '12px 14px 8px', 'flex-shrink': '0', 'border-bottom': '1px solid var(--surface0)' }}>
         <div style={{ display: 'flex', 'align-items': 'center', 'justify-content': 'space-between', 'margin-bottom': '8px' }}>
@@ -186,6 +276,7 @@ export default function NotesList() {
                 <div
                   class="note-list-item"
                   onClick={e => openNote(note.path, note.title, e.ctrlKey || e.metaKey)}
+                  onContextMenu={e => openCtxMenu(e, { kind: 'note', path: note.path, title: note.title })}
                 >
                   <div style={{ display: 'flex', 'align-items': 'baseline', gap: '6px', 'justify-content': 'space-between' }}>
                     <span class="truncate" style={{ 'font-size': '13px', 'font-weight': '500', color: 'var(--text)', flex: '1', 'min-width': '0' }}>

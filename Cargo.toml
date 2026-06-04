@@ -1,2 +1,12 @@
 [workspace]
 members = ["core", "api", "frontend/src-tauri"]
+resolver = "2"
+
+# Workspace-wide clippy configuration.
+# Correctness and suspicious lints are errors (actual bugs).
+# Style and perf are warnings — reviewed but never block CI.
+[workspace.lints.clippy]
+correctness = { level = "deny", priority = -1 }
+suspicious  = { level = "deny", priority = -1 }
+perf        = { level = "warn", priority = -1 }
+style       = { level = "warn", priority = -1 }

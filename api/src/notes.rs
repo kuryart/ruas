@@ -95,7 +95,6 @@ pub async fn read_note(body: web::Json<PathArg>) -> impl Responder {
 pub async fn save_note(body: web::Json<SaveNoteArgs>) -> impl Responder {
     let mut note = body.into_inner().note;
     note.frontmatter.modified = Some(Utc::now().to_rfc3339());
-    note.body = ensure_block_ids(&note.body);
     match serialize_note(&note.frontmatter, &note.body) {
         Ok(content) => match fs::write(&note.path, content) {
             Ok(_) => HttpResponse::Ok().finish(),

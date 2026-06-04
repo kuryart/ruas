@@ -509,8 +509,6 @@ impl NotesModule {
 
     fn cmd_save(&self, mut note: Note, ctx: &VaultContext<'_>) -> DispatchResult {
         note.frontmatter.modified = Some(Utc::now().to_rfc3339());
-        // Assign block IDs so `[[note^block]]` references always have a target.
-        note.body = ensure_block_ids(&note.body);
         let content = serialize_note(&note.frontmatter, &note.body)?;
         std::fs::write(&note.path, content).map_err(|e| e.to_string())?;
         if let Some(uid) = &note.frontmatter.uid {
@@ -568,6 +566,30 @@ impl NotesModule {
         if let Some(uid) = uid {
             ctx.events.emit(ModuleEvent::NoteDeleted { uid });
         }
+        Ok(Value::Null)
+    }
+
+    fn cmd_create_folder(&self, name: String, ctx: &VaultContext<'_>) -> DispatchResult {
+        let safe_name = name.trim().replace(['/', '\\', '\0'], "_");
+        if safe_name.is_empty() {
+            return Err("folder name cannot be empty".into());
+        }
+        let target = self.notes_dir(ctx).join(&safe_name);
+        if target.exists() {
+            return Err(format!("folder '{safe_name}' already exists"));
+        }
+        std::fs::create_dir_all(&target).map_err(|e| e.to_string())?;
+        serde_json::to_value(target.to_string_lossy().to_string()).map_err(|e| e.to_string())
+    }
+
+    fn cmd_delete_folder(&self, path: &str, ctx: &VaultContext<'_>) -> DispatchResult {
+        let notes_dir = self.notes_dir(ctx);
+        let target = std::path::Path::new(path).canonicalize().map_err(|e| e.to_string())?;
+        let base = notes_dir.canonicalize().map_err(|e| e.to_string())?;
+        if !target.starts_with(&base) || target == base {
+            return Err("path is outside the notes directory".into());
+        }
+        std::fs::remove_dir_all(&target).map_err(|e| e.to_string())?;
         Ok(Value::Null)
     }
 }
@@ -692,6 +714,14 @@ impl Module for NotesModule {
                 let path = args["path"].as_str().ok_or("missing required param: path")?;
                 self.cmd_delete(path, ctx)
             }
+            "create_folder" => {
+                let name = args["name"].as_str().unwrap_or("New folder").to_string();
+                self.cmd_create_folder(name, ctx)
+            }
+            "delete_folder" => {
+                let path = args["path"].as_str().ok_or("missing required param: path")?;
+                self.cmd_delete_folder(path, ctx)
+            }
             "list_blocks" => {
                 let path = args["path"].as_str().ok_or("missing required param: path")?;
                 self.cmd_list_blocks(path)
@@ -772,6 +802,8 @@ impl NotesModule {
 mod tests {
     use super::*;
 
+    // ── parse_note / serialize_note ────────────────────────────────────────────
+
     #[test]
     fn frontmatter_preserves_custom_properties() {
         let src = "---\ntitle: Hello\ntags:\n  - a\n  - b\nstatus: draft\npriority: 3\n---\n\nBody text\n";
@@ -780,7 +812,6 @@ mod tests {
         assert_eq!(note.frontmatter.extra.get("status").and_then(|v| v.as_str()), Some("draft"));
         assert_eq!(note.frontmatter.extra.get("priority").and_then(|v| v.as_i64()), Some(3));
 
-        // Round-trip: custom props survive serialize → parse.
         let out = serialize_note(&note.frontmatter, &note.body).unwrap();
         let again = parse_note("x.md", &out).unwrap();
         assert_eq!(again.frontmatter.extra.get("status").and_then(|v| v.as_str()), Some("draft"));
@@ -788,10 +819,258 @@ mod tests {
     }
 
     #[test]
+    fn parse_note_without_frontmatter() {
+        let note = parse_note("x.md", "Just a plain body.").unwrap();
+        assert_eq!(note.body, "Just a plain body.");
+        assert!(note.frontmatter.title.is_none());
+    }
+
+    #[test]
+    fn serialize_parse_round_trip_basic() {
+        let fm = NoteFrontmatter {
+            title: Some("My Note".to_string()),
+            uid: Some("abc-123".to_string()),
+            ..Default::default()
+        };
+        let body = "Hello world.";
+        let content = serialize_note(&fm, body).unwrap();
+        let note = parse_note("x.md", &content).unwrap();
+        assert_eq!(note.frontmatter.title.as_deref(), Some("My Note"));
+        assert_eq!(note.frontmatter.uid.as_deref(), Some("abc-123"));
+        assert_eq!(note.body, body);
+    }
+
+    #[test]
+    fn serialize_parse_round_trip_with_tags() {
+        let fm = NoteFrontmatter {
+            title: Some("Tagged".to_string()),
+            tags: Some(vec!["rust".to_string(), "tauri".to_string()]),
+            ..Default::default()
+        };
+        let content = serialize_note(&fm, "").unwrap();
+        let note = parse_note("x.md", &content).unwrap();
+        let tags = note.frontmatter.tags.unwrap();
+        assert_eq!(tags, vec!["rust", "tauri"]);
+    }
+
+    #[test]
+    fn serialize_parse_preserves_markdown_body() {
+        let fm = NoteFrontmatter { title: Some("T".to_string()), ..Default::default() };
+        let body = "# Heading\n\n- item 1\n- item 2\n\n```rust\nfn main() {}\n```\n";
+        let content = serialize_note(&fm, body).unwrap();
+        let note = parse_note("x.md", &content).unwrap();
+        assert_eq!(note.body, body);
+    }
+
+    #[test]
+    fn note_to_meta_uses_title() {
+        let fm = NoteFrontmatter { title: Some("Test Title".to_string()), ..Default::default() };
+        let note = Note { path: "x.md".to_string(), frontmatter: fm, body: String::new() };
+        assert_eq!(note_to_meta(&note).title, "Test Title");
+    }
+
+    #[test]
+    fn note_to_meta_falls_back_to_untitled() {
+        let note = Note { path: "x.md".to_string(), frontmatter: Default::default(), body: String::new() };
+        assert_eq!(note_to_meta(&note).title, "Untitled");
+    }
+
+    // ── ensure_block_ids ──────────────────────────────────────────────────────
+
+    #[test]
+    fn ensure_block_ids_adds_id_to_content_lines() {
+        let body = "Hello world";
+        let out = ensure_block_ids(body);
+        assert!(out.contains(" ^"), "expected a block ID to be added");
+    }
+
+    #[test]
+    fn ensure_block_ids_skips_empty_lines() {
+        let body = "\n\n";
+        let out = ensure_block_ids(body);
+        assert!(!out.contains('^'), "empty lines should not get block IDs");
+    }
+
+    #[test]
+    fn ensure_block_ids_skips_separator_lines() {
+        for sep in ["---", "***", "___", "- - -"] {
+            let out = ensure_block_ids(sep);
+            assert!(!out.contains('^'), "separator '{sep}' should not get a block ID");
+        }
+    }
+
+    #[test]
+    fn ensure_block_ids_skips_content_inside_code_fence() {
+        let body = "```\ncode line here\n```";
+        let out = ensure_block_ids(body);
+        let lines: Vec<&str> = out.lines().collect();
+        assert!(!lines[1].contains('^'), "code inside fence should not get block ID");
+    }
+
+    #[test]
+    fn ensure_block_ids_preserves_existing_ids() {
+        let body = "Hello world ^abc123";
+        let out = ensure_block_ids(body);
+        assert!(out.contains("^abc123"), "existing ID must be preserved");
+        assert_eq!(out.matches('^').count(), 1, "no extra ID should be added");
+    }
+
+    #[test]
+    fn ensure_block_ids_is_idempotent() {
+        let body = "Line one\nLine two\n";
+        let first = ensure_block_ids(body);
+        let second = ensure_block_ids(&first);
+        assert_eq!(first, second, "calling twice must yield the same result");
+    }
+
+    // ── list_blocks ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn list_blocks_finds_marked_lines() {
+        let body = "Alpha ^block1\nBeta ^block2\nGamma (no id)";
+        let blocks = list_blocks(body);
+        assert_eq!(blocks.len(), 2);
+        assert!(blocks.iter().any(|b| b.id == "block1"));
+        assert!(blocks.iter().any(|b| b.id == "block2"));
+    }
+
+    #[test]
+    fn list_blocks_empty_body_returns_empty() {
+        assert!(list_blocks("").is_empty());
+    }
+
+    // ── wiki_links_with_context ────────────────────────────────────────────────
+
+    #[test]
     fn backlinks_match_by_title() {
         let body = "see [[Target Note]] and [[Other]] here";
         let links = wiki_links_with_context(body);
         assert!(links.iter().any(|(l, _)| l == "Target Note"));
         assert!(links.iter().any(|(l, _)| l == "Other"));
+    }
+
+    #[test]
+    fn wiki_links_alias_strips_to_target() {
+        let links = wiki_links_with_context("[[My Note|Display Text]]");
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].0, "My Note");
+    }
+
+    #[test]
+    fn wiki_links_block_ref_strips_to_note() {
+        let links = wiki_links_with_context("[[Some Note^abc123]]");
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].0, "Some Note");
+    }
+
+    #[test]
+    fn wiki_links_no_links_returns_empty() {
+        assert!(wiki_links_with_context("plain text no links").is_empty());
+    }
+
+    #[test]
+    fn wiki_links_context_contains_surrounding_text() {
+        let body = "prefix text [[Target]] suffix text";
+        let links = wiki_links_with_context(body);
+        assert_eq!(links.len(), 1);
+        assert!(links[0].1.contains("prefix"), "context should include preceding text");
+        assert!(links[0].1.contains("suffix"), "context should include following text");
+    }
+
+    // ── fts_query ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn fts_query_single_token_adds_prefix_wildcard() {
+        assert_eq!(fts_query("rust"), Some("rust*".to_string()));
+    }
+
+    #[test]
+    fn fts_query_multiple_tokens_joined() {
+        assert_eq!(fts_query("rust tauri"), Some("rust* tauri*".to_string()));
+    }
+
+    #[test]
+    fn fts_query_empty_returns_none() {
+        assert!(fts_query("").is_none());
+    }
+
+    #[test]
+    fn fts_query_symbols_only_returns_none() {
+        assert!(fts_query("!@#$%").is_none());
+    }
+
+    #[test]
+    fn fts_query_lowercases_tokens() {
+        assert_eq!(fts_query("Rust"), Some("rust*".to_string()));
+    }
+
+    // ── score_note ────────────────────────────────────────────────────────────
+
+    fn meta(title: &str) -> NoteMeta {
+        NoteMeta { path: "x.md".to_string(), title: title.to_string(), tags: None, modified: None }
+    }
+
+    #[test]
+    fn score_note_exact_title_is_highest() {
+        let s = score_note("hello", &meta("hello"), "");
+        assert!(s >= 1000, "exact match should score ≥ 1000, got {s}");
+    }
+
+    #[test]
+    fn score_note_prefix_outranks_contains() {
+        let prefix = score_note("he", &meta("hello world"), "");
+        let contains = score_note("llo", &meta("hello world"), "");
+        assert!(prefix > contains, "prefix score {prefix} should beat contains score {contains}");
+    }
+
+    #[test]
+    fn score_note_body_match_adds_points() {
+        let with_body = score_note("term", &meta("other"), "the term is here");
+        let without   = score_note("term", &meta("other"), "nothing here");
+        assert!(with_body > without);
+    }
+
+    #[test]
+    fn score_note_empty_query_returns_zero() {
+        assert_eq!(score_note("", &meta("anything"), "body"), 0);
+    }
+
+    // ── is_subsequence ────────────────────────────────────────────────────────
+
+    #[test]
+    fn is_subsequence_matches_in_order() {
+        assert!(is_subsequence("abc", "xaybzc"));
+    }
+
+    #[test]
+    fn is_subsequence_fails_when_out_of_order() {
+        assert!(!is_subsequence("cba", "abc"));
+    }
+
+    #[test]
+    fn is_subsequence_empty_needle_always_matches() {
+        assert!(is_subsequence("", "anything"));
+    }
+
+    // ── proptest round-trips ──────────────────────────────────────────────────
+
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn note_serialize_parse_title_and_body_round_trip(
+            // Restrict to printable chars (no ASCII controls) — serde_yaml normalises
+            // things like \n inside field values, which is not realistic user input.
+            title in "[^\x00-\x1F]{0,80}",
+            body  in "[^\x00]{0,200}",
+        ) {
+            let fm = NoteFrontmatter { title: Some(title.clone()), ..Default::default() };
+            let content = serialize_note(&fm, &body).unwrap();
+            let note = parse_note("x.md", &content).unwrap();
+            prop_assert_eq!(note.frontmatter.title.as_deref(), Some(title.as_str()));
+            // The parser normalises leading \n then \r chars (CRLF stripping) — intentional.
+            let expected = body.trim_start_matches('\n').trim_start_matches('\r');
+            prop_assert_eq!(note.body, expected);
+        }
     }
 }

@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "dev/04-core-data-model.md",
+                "file": "dev/12-howto-new-module.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "04-core-data-model"
+              "title": "12-howto-new-module"
             }
           }
         ]
@@ -94,7 +94,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "dev/04-core-data-model.md",
+                "file": "dev/12-howto-new-module.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -104,7 +104,7 @@
                 "unlinkedCollapsed": true
               },
               "icon": "links-coming-in",
-              "title": "Links inversos para 04-core-data-model"
+              "title": "Links inversos para 12-howto-new-module"
             }
           },
           {
@@ -113,12 +113,12 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "dev/04-core-data-model.md",
+                "file": "dev/12-howto-new-module.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               },
               "icon": "links-going-out",
-              "title": "Links de saída para 04-core-data-model"
+              "title": "Links de saída para 12-howto-new-module"
             }
           },
           {
@@ -156,21 +156,20 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "dev/04-core-data-model.md",
+                "file": "dev/12-howto-new-module.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
               },
               "icon": "lucide-list",
-              "title": "Sumário de 04-core-data-model"
+              "title": "Sumário de 12-howto-new-module"
             }
           }
         ]
       }
     ],
     "direction": "horizontal",
-    "width": 300,
-    "collapsed": true
+    "width": 300
   },
   "left-ribbon": {
     "hiddenItems": {
@@ -185,6 +184,24 @@
   },
   "active": "ab88aeab3dc48d83",
   "lastOpenFiles": [
+    "screenshots/latex-error.png",
+    "screenshots/swappy-20260603_213255.png",
+    "screenshots",
+    "dev/11-styling.md",
+    "dev/10-i18n.md",
+    "dev/07-frontend-workspace.md",
+    "dev/05-tauri-shell.md",
+    "dev/04-core-data-model.md",
+    "examples/notes-correct.png",
+    "examples/contacts-broken.png",
+    "examples/notes-example.png",
+    "examples/contacts-example.png",
+    "architecture.png",
+    "examples/architecture.png",
+    "examples/obsidian-example.png",
+    "examples/layout.excalidraw.png",
+    "examples/swappy-20260603_013148.png",
+    "examples",
     "dev/03-core-index.md",
     "dev/02-core-module-system.md",
     "dev/01-architecture.md",

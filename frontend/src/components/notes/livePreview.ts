@@ -190,7 +190,6 @@ const DECO = {
   footnote:  mark('color:var(--accent);font-size:0.75em;vertical-align:super'),
   tag:       mark('color:var(--accent);font-weight:500'),
   quoteLine: Decoration.line({ attributes: { style: 'border-left:3px solid var(--accent);padding-left:10px;color:var(--muted);font-style:italic' } }),
-  codeLine:  Decoration.line({ attributes: { style: 'background:var(--mantle)' } }),
 };
 
 const hide = Decoration.replace({});
@@ -242,8 +241,8 @@ function buildDecorations(state: EditorState): DecorationSet {
         if (onCursor(node.from, node.to)) return false;
         const level = parseInt(hm[1]);
         const line = state.doc.lineAt(node.from);
-        // Strip the `# ` prefix and the internal ` ^id` marker (the widget
-        // replaces the whole line, so blockIdConceal can't reach it).
+        // Strip the `# ` prefix and the ` ^id` marker — the heading widget
+        // replaces the whole line so the blockId mark decoration is eclipsed.
         const text = line.text.replace(/^#+\s*/, '').replace(/ \^[a-zA-Z0-9-]{4,12}\s*$/, '');
         pushWidget(line.from, line.to, Decoration.replace({ widget: new HeadingWidget(level, text) }));
         return false;
@@ -255,18 +254,6 @@ function buildDecorations(state: EditorState): DecorationSet {
         const line = state.doc.lineAt(node.from);
         pushWidget(line.from, line.to, Decoration.replace({ widget: new HrWidget() }));
         return false;
-      }
-
-      // Fenced code: always shade the block lines ──────────────────────────────
-      if (name === 'FencedCode') {
-        // ```mermaid blocks are rendered as diagrams by mermaidRenderer — don't
-        // shade them here (the block widget would overlap the line decorations).
-        const info = state.doc.lineAt(node.from).text.replace(/^[`~]+/, '').trim().toLowerCase();
-        if (info === 'mermaid') return false;
-        const first = state.doc.lineAt(node.from).number;
-        const last = state.doc.lineAt(node.to).number;
-        for (let ln = first; ln <= last; ln++) pushLine(state.doc.line(ln).from, DECO.codeLine);
-        return; // descend for inner code marks (none needed) — keep raw text
       }
 
       // Tables ─────────────────────────────────────────────────────────────────
@@ -399,7 +386,7 @@ function buildDecorations(state: EditorState): DecorationSet {
       }
     }
 
-    // Block-id markers (` ^abc123`) are concealed in every mode by the dedicated
+    // Block-id markers (` ^abc123`) are styled as small muted text by the
     // `blockIdConceal` extension — see editor/blockIdConceal.ts.
 
     const hl = /==([^=\n]+)==/g;

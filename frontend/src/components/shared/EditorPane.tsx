@@ -1,21 +1,19 @@
 import { createEffect, on, onCleanup, onMount } from 'solid-js';
-import { Decoration, type DecorationSet, EditorView, keymap, lineNumbers } from '@codemirror/view';
-import { EditorState, StateEffect, StateField } from '@codemirror/state';
+import { Decoration, type DecorationSet, EditorView, drawSelection, keymap, lineNumbers } from '@codemirror/view';
+import { EditorState, StateEffect, StateField, type Extension } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
 import { GFM, Subscript, Superscript } from '@lezer/markdown';
 import { catppuccinHighlight, catppuccinTheme } from './catppuccinTheme';
-import { markdownLivePreview } from './livePreview';
 import { tableInteraction } from './editor/tableInteraction';
 import { autoPairs } from './editor/autoPairs';
-import { wikiLinks } from './editor/wikiLink';
-import { blockRef } from './editor/blockRef';
 import { blockIdConceal } from './editor/blockIdConceal';
 import { latex } from './editor/latexRenderer';
 import { mermaidDiagram } from './editor/mermaidRenderer';
 import { folding } from './editor/folding';
 import { slashCommands } from './editor/slashCommands';
 import { codeLanguages } from './editor/languageSupport';
+import { codeBlockBg } from './editor/codeBlockBg';
 import { vim } from '@replit/codemirror-vim';
 import { vimMode } from '../../stores/prefsStore';
 
@@ -50,16 +48,31 @@ export default function EditorPane(props: {
   onChange: (v: string) => void;
   scrollTarget?: string | null;
   onReady?: (api: EditorApi) => void;
+  // Module-specific extensions (e.g. wiki-links, block-refs, live preview).
+  // Appended after the generic edit-mode extensions when mode === 'edit'.
+  extraExtensions?: Extension[];
+  // When true the editor grows with content instead of filling its container.
+  // Use in forms/detail views where the outer page handles scrolling.
+  autoGrow?: boolean;
 }) {
   let container!: HTMLDivElement;
   let view: EditorView | undefined;
   let flashTimer: ReturnType<typeof setTimeout> | undefined;
 
+  // Override the theme's height:100% so the editor grows with its content.
+  const autoGrowTheme = EditorView.theme({
+    '&': { height: 'auto' },
+    '.cm-scroller': { overflow: 'visible' },
+  });
+
   const buildExtensions = (mode: 'edit' | 'raw') => [
     // Vim must come first so its keymap takes precedence over the defaults.
     ...(vimMode() ? [vim()] : []),
     catppuccinTheme,
+    ...(props.autoGrow ? [autoGrowTheme] : []),
     catppuccinHighlight,
+    drawSelection(),
+    ...codeBlockBg,
     markdown({ extensions: [GFM, Superscript, Subscript], codeLanguages }),
     autoPairs(),
     history(),
@@ -72,8 +85,9 @@ export default function EditorPane(props: {
     }),
     // Block-id markers are internal — conceal them in every mode, raw included.
     blockIdConceal(),
-    ...(mode === 'raw'  ? [lineNumbers()]                          : []),
-    ...(mode === 'edit' ? [markdownLivePreview, tableInteraction(), blockRef(), wikiLinks(), slashCommands(), latex(), mermaidDiagram()] : []),
+    ...(mode === 'raw'  ? [lineNumbers()]                                                      : []),
+    ...(mode === 'edit' ? [tableInteraction(), slashCommands(), latex(), mermaidDiagram(),
+                           ...(props.extraExtensions ?? [])]                                   : []),
   ];
 
   /** Locate the line carrying ` ^blockId`, scroll it into view and flash it. */
@@ -134,5 +148,14 @@ export default function EditorPane(props: {
     view.setState(EditorState.create({ doc, extensions: buildExtensions(mode as 'edit' | 'raw') }));
   }, { defer: true }));
 
-  return <div ref={container} style={{ height: '100%', 'box-sizing': 'border-box' }} />;
+  return (
+    <div
+      ref={container}
+      style={{
+        height: props.autoGrow ? 'auto' : '100%',
+        'min-height': props.autoGrow ? '120px' : undefined,
+        'box-sizing': 'border-box',
+      }}
+    />
+  );
 }

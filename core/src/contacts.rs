@@ -23,6 +23,8 @@ pub struct ContactAddress {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub street: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub neighborhood: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub city: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub region: Option<String>,
@@ -426,6 +428,195 @@ impl ContactsModule {
             Some(&contact.frontmatter.display_name()),
             &contact.body,
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── parse_contact / serialize_contact ──────────────────────────────────────
+
+    #[test]
+    fn parse_serialize_round_trip_basic() {
+        let fm = ContactFrontmatter {
+            uid: Some("uid-1".to_string()),
+            full_name: Some("Alice Bob".to_string()),
+            ..Default::default()
+        };
+        let body = "Some notes.";
+        let content = serialize_contact(&fm, body).unwrap();
+        let contact = parse_contact("c.md", &content).unwrap();
+        assert_eq!(contact.frontmatter.uid.as_deref(), Some("uid-1"));
+        assert_eq!(contact.frontmatter.full_name.as_deref(), Some("Alice Bob"));
+        assert_eq!(contact.body, body);
+    }
+
+    #[test]
+    fn parse_serialize_round_trip_with_emails() {
+        let fm = ContactFrontmatter {
+            full_name: Some("Bob".to_string()),
+            email: Some(vec![
+                ContactEmail { field_type: "work".to_string(), value: "bob@work.com".to_string() },
+                ContactEmail { field_type: "home".to_string(), value: "bob@home.com".to_string() },
+            ]),
+            ..Default::default()
+        };
+        let content = serialize_contact(&fm, "").unwrap();
+        let contact = parse_contact("c.md", &content).unwrap();
+        let emails = contact.frontmatter.email.unwrap();
+        assert_eq!(emails.len(), 2);
+        assert_eq!(emails[0].value, "bob@work.com");
+        assert_eq!(emails[1].field_type, "home");
+    }
+
+    #[test]
+    fn parse_serialize_round_trip_with_address_and_neighborhood() {
+        let fm = ContactFrontmatter {
+            full_name: Some("Carol".to_string()),
+            adr: Some(vec![ContactAddress {
+                field_type: "home".to_string(),
+                street: Some("Rua das Flores, 10".to_string()),
+                neighborhood: Some("Centro".to_string()),
+                city: Some("São Paulo".to_string()),
+                region: Some("SP".to_string()),
+                code: Some("01000-000".to_string()),
+                country: Some("Brasil".to_string()),
+            }]),
+            ..Default::default()
+        };
+        let content = serialize_contact(&fm, "").unwrap();
+        let contact = parse_contact("c.md", &content).unwrap();
+        let adr = &contact.frontmatter.adr.unwrap()[0];
+        assert_eq!(adr.neighborhood.as_deref(), Some("Centro"));
+        assert_eq!(adr.city.as_deref(), Some("São Paulo"));
+    }
+
+    #[test]
+    fn parse_contact_without_frontmatter() {
+        let contact = parse_contact("c.md", "Plain body only.").unwrap();
+        assert_eq!(contact.body, "Plain body only.");
+        assert!(contact.frontmatter.full_name.is_none());
+    }
+
+    // ── display_name ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn display_name_prefers_full_name() {
+        let fm = ContactFrontmatter {
+            full_name: Some("Alice Smith".to_string()),
+            given_name: Some("Alice".to_string()),
+            family_name: Some("Smith".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(fm.display_name(), "Alice Smith");
+    }
+
+    #[test]
+    fn display_name_combines_given_and_family() {
+        let fm = ContactFrontmatter {
+            given_name: Some("Alice".to_string()),
+            family_name: Some("Smith".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(fm.display_name(), "Alice Smith");
+    }
+
+    #[test]
+    fn display_name_given_only() {
+        let fm = ContactFrontmatter {
+            given_name: Some("Alice".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(fm.display_name(), "Alice");
+    }
+
+    #[test]
+    fn display_name_family_only() {
+        let fm = ContactFrontmatter {
+            family_name: Some("Smith".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(fm.display_name(), "Smith");
+    }
+
+    #[test]
+    fn display_name_returns_unnamed_when_all_empty() {
+        assert_eq!(ContactFrontmatter::default().display_name(), "Unnamed");
+    }
+
+    // ── initials ──────────────────────────────────────────────────────────────
+
+    #[test]
+    fn initials_two_words() {
+        let fm = ContactFrontmatter { full_name: Some("Alice Bob".to_string()), ..Default::default() };
+        assert_eq!(fm.initials(), "AB");
+    }
+
+    #[test]
+    fn initials_single_word() {
+        let fm = ContactFrontmatter { full_name: Some("Madonna".to_string()), ..Default::default() };
+        assert_eq!(fm.initials(), "M");
+    }
+
+    #[test]
+    fn initials_more_than_two_words_takes_only_two() {
+        let fm = ContactFrontmatter { full_name: Some("Alice Beth Carol".to_string()), ..Default::default() };
+        assert_eq!(fm.initials(), "AB");
+    }
+
+    #[test]
+    fn initials_are_uppercased() {
+        let fm = ContactFrontmatter { full_name: Some("alice bob".to_string()), ..Default::default() };
+        assert_eq!(fm.initials(), "AB");
+    }
+
+    // ── contact_to_meta ───────────────────────────────────────────────────────
+
+    #[test]
+    fn contact_to_meta_primary_email_is_first() {
+        let fm = ContactFrontmatter {
+            full_name: Some("X".to_string()),
+            email: Some(vec![
+                ContactEmail { field_type: "work".to_string(), value: "first@x.com".to_string() },
+                ContactEmail { field_type: "home".to_string(), value: "second@x.com".to_string() },
+            ]),
+            ..Default::default()
+        };
+        let contact = Contact { path: "c.md".to_string(), frontmatter: fm, body: String::new() };
+        assert_eq!(contact_to_meta(&contact).primary_email.as_deref(), Some("first@x.com"));
+    }
+
+    #[test]
+    fn contact_to_meta_no_email_is_none() {
+        let fm = ContactFrontmatter { full_name: Some("X".to_string()), ..Default::default() };
+        let contact = Contact { path: "c.md".to_string(), frontmatter: fm, body: String::new() };
+        assert!(contact_to_meta(&contact).primary_email.is_none());
+    }
+
+    // ── proptest round-trips ──────────────────────────────────────────────────
+
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn contact_serialize_parse_name_and_body_round_trip(
+            // Restrict to printable chars — serde_yaml normalises ASCII controls in
+            // field values, which is not realistic user input.
+            full_name in "[^\x00-\x1F]{0,80}",
+            body      in "[^\x00]{0,200}",
+        ) {
+            let fm = ContactFrontmatter {
+                full_name: Some(full_name.clone()),
+                ..Default::default()
+            };
+            let content = serialize_contact(&fm, &body).unwrap();
+            let contact = parse_contact("c.md", &content).unwrap();
+            prop_assert_eq!(contact.frontmatter.full_name.as_deref(), Some(full_name.as_str()));
+            // The parser normalises leading \n then \r chars (CRLF stripping) — intentional.
+            let expected = body.trim_start_matches('\n').trim_start_matches('\r');
+            prop_assert_eq!(contact.body, expected);
+        }
     }
 }
 
