@@ -1,4 +1,4 @@
-use crate::{RegistryState, WatcherState};
+use crate::{RegistryState, RenameGuardState, WatcherState};
 use ruas_core::{create_vault, validate_vault};
 use serde::Serialize;
 use std::fs;
@@ -68,6 +68,7 @@ fn activate_vault(
     vault_path: &PathBuf,
     registry: &tauri::State<RegistryState>,
     watcher_state: &tauri::State<WatcherState>,
+    rename_guard: &tauri::State<RenameGuardState>,
 ) {
     // Drop old watcher before opening registry for new vault
     *watcher_state.0.lock().unwrap() = None;
@@ -77,7 +78,8 @@ fn activate_vault(
     }
 
     let registry_arc = Arc::clone(&registry.0);
-    match crate::watcher::start(vault_path.clone(), registry_arc, app.clone()) {
+    let guard_arc = Arc::clone(&rename_guard.0);
+    match crate::watcher::start(vault_path.clone(), registry_arc, app.clone(), guard_arc) {
         Ok(w) => *watcher_state.0.lock().unwrap() = Some(w),
         Err(e) => log::warn!("Failed to start file watcher: {e}"),
     }
@@ -105,13 +107,14 @@ pub fn new_vault(
     vault_state: tauri::State<VaultState>,
     registry: tauri::State<RegistryState>,
     watcher_state: tauri::State<WatcherState>,
+    rename_guard: tauri::State<RenameGuardState>,
     path: String,
     name: String,
 ) -> Result<VaultInfo, String> {
     let vault_path = PathBuf::from(&path);
     create_vault(&vault_path, name.trim())?;
 
-    activate_vault(&app, &vault_path, &registry, &watcher_state);
+    activate_vault(&app, &vault_path, &registry, &watcher_state, &rename_guard);
 
     persist_vault(&app, &vault_path);
     *vault_state.0.lock().unwrap() = Some(vault_path);
@@ -124,12 +127,13 @@ pub fn open_vault(
     vault_state: tauri::State<VaultState>,
     registry: tauri::State<RegistryState>,
     watcher_state: tauri::State<WatcherState>,
+    rename_guard: tauri::State<RenameGuardState>,
     path: String,
 ) -> Result<VaultInfo, String> {
     let vault_path = PathBuf::from(&path);
     let config = validate_vault(&vault_path)?;
 
-    activate_vault(&app, &vault_path, &registry, &watcher_state);
+    activate_vault(&app, &vault_path, &registry, &watcher_state, &rename_guard);
 
     persist_vault(&app, &vault_path);
     *vault_state.0.lock().unwrap() = Some(vault_path);

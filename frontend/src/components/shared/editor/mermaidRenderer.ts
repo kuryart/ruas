@@ -10,24 +10,39 @@ import { renderMermaid } from './mermaidLoader';
 class MermaidWidget extends WidgetType {
   constructor(readonly code: string) { super(); }
   eq(o: MermaidWidget) { return o.code === this.code; }
-  toDOM() {
+  toDOM(view: EditorView) {
     const el = document.createElement('div');
     el.className = 'mermaid-block';
     el.style.cursor = 'pointer';
     void renderMermaid(this.code)
-      .then(svg => { el.innerHTML = svg; })
+      .then(svg => {
+        el.innerHTML = svg;
+        // SVG loaded asynchronously — height changed, notify CM6 to re-measure.
+        view.requestMeasure();
+      })
       .catch((e: unknown) => {
         el.classList.add('mermaid-error');
         el.textContent = e instanceof Error ? e.message : String(e);
+        view.requestMeasure();
       });
     return el;
   }
   ignoreEvent() { return false; }
 }
 
-function build(state: EditorState): DecorationSet {
+interface MermaidState {
+  decos: DecorationSet;
+  // All mermaid regions — used to detect boundary crossings so we only
+  // call build() when necessary (same pattern as latexRenderer).
+  blockRanges: DecorationSet;
+}
+
+const blockMark = Decoration.mark({});
+
+function build(state: EditorState): MermaidState {
   const sel = state.selection.main;
   const ranges: Range<Decoration>[] = [];
+  const blockRangesList: Range<Decoration>[] = [];
 
   syntaxTree(state).iterate({
     enter(node) {
@@ -38,12 +53,13 @@ function build(state: EditorState): DecorationSet {
 
       const from = firstLine.from;
       const to = state.doc.lineAt(node.to).to;
+      blockRangesList.push(blockMark.range(from, to));
       if (sel.from <= to && sel.to >= from) return; // caret inside → show raw
 
       // Inner code = everything between the opening and closing fence lines.
       const lastLine = state.doc.lineAt(node.to);
-      const codeFrom = Math.min(firstLine.to + 1, state.doc.length);
-      const codeTo = Math.max(lastLine.from - 1, codeFrom);
+      const codeFrom = Math.min(firstLine.to, state.doc.length);
+      const codeTo = Math.max(lastLine.from, codeFrom);
       const code = state.doc.sliceString(codeFrom, codeTo);
       if (!code.trim()) return;
 
@@ -51,13 +67,26 @@ function build(state: EditorState): DecorationSet {
     },
   });
 
-  return Decoration.set(ranges, true);
+  return {
+    decos: Decoration.set(ranges, true),
+    blockRanges: Decoration.set(blockRangesList, true),
+  };
 }
 
 export function mermaidDiagram(): Extension {
-  return StateField.define<DecorationSet>({
+  return StateField.define<MermaidState>({
     create: build,
-    update: (value, tr) => (tr.docChanged || tr.selection ? build(tr.state) : value),
-    provide: f => EditorView.decorations.from(f),
+    update: (value, tr) => {
+      if (!tr.docChanged && !tr.selection) return value;
+      if (tr.docChanged) return build(tr.state);
+      // Only rebuild when cursor crosses a mermaid block boundary.
+      const sel = tr.state.selection.main;
+      const prev = tr.startState.selection.main;
+      let rebuild = false;
+      value.blockRanges.between(sel.from, sel.to, () => { rebuild = true; return false; });
+      if (!rebuild) value.blockRanges.between(prev.from, prev.to, () => { rebuild = true; return false; });
+      return rebuild ? build(tr.state) : value;
+    },
+    provide: f => EditorView.decorations.from(f, s => s.decos),
   });
 }

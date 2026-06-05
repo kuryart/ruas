@@ -8,7 +8,7 @@ import {
   focusedPanelId, panels,
 } from '../workspace/workspaceStore';
 import { pendingBlock, setPendingBlock } from '../../stores/blockTargetStore';
-import { setActiveNote, setActiveNoteBody, clearActiveNote } from '../../stores/layoutStore';
+import { setActiveNote, setActiveNoteBody, clearActiveNote, invalidateNotesList } from '../../stores/layoutStore';
 import { type Heading } from '../shared/editor/toc';
 import { extractBodyTags } from '../shared/editor/tags';
 import ViewPane, { type ViewApi } from '../shared/ViewPane';
@@ -197,6 +197,7 @@ export default function NoteDetail(props: { path: string; panelId: string }) {
     try {
       await invoke('save_note', { note: payload });
       setSaveStatus('saved');
+      invalidateNotesList();
     } catch {
       setSaveStatus('error');
     }

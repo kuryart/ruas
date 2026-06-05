@@ -4,6 +4,7 @@ mod notes;
 mod vault;
 mod watcher;
 
+use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
 use vault::VaultState;
@@ -12,8 +13,9 @@ use vault::VaultState;
 
 pub struct RegistryState(pub Arc<Mutex<ruas_core::ModuleRegistry>>);
 
-fn build_registry() -> ruas_core::ModuleRegistry {
+fn build_registry(rename_guard: Arc<Mutex<HashSet<String>>>) -> ruas_core::ModuleRegistry {
     let mut registry = ruas_core::ModuleRegistry::new();
+    registry.set_rename_guard(rename_guard);
     registry.register(ruas_core::ContactsModule::default());
     registry.register(ruas_core::NotesModule::default());
     // Future built-ins — add here as they are implemented:
@@ -28,6 +30,13 @@ fn build_registry() -> ruas_core::ModuleRegistry {
 
 /// Holds the active file watcher. Dropping the inner value stops watching.
 pub struct WatcherState(pub Mutex<Option<notify::RecommendedWatcher>>);
+
+// ── Rename guard state ─────────────────────────────────────────────────────
+
+/// Shared set of paths currently being renamed by the app.
+/// Injected into VaultContext (for module commands) and the file watcher
+/// (to suppress spurious FileDeleted events during programmatic renames).
+pub struct RenameGuardState(pub Arc<Mutex<HashSet<String>>>);
 
 // ── Generic module commands ────────────────────────────────────────────────
 
@@ -140,12 +149,15 @@ fn resolve_uid(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let rename_guard: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
+
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .manage(VaultState(Mutex::new(None)))
-        .manage(RegistryState(Arc::new(Mutex::new(build_registry()))))
+        .manage(RegistryState(Arc::new(Mutex::new(build_registry(Arc::clone(&rename_guard))))))
         .manage(WatcherState(Mutex::new(None)))
+        .manage(RenameGuardState(Arc::clone(&rename_guard)))
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -167,7 +179,8 @@ pub fn run() {
                     }
 
                     let registry_arc = Arc::clone(&app.state::<RegistryState>().0);
-                    match watcher::start(vault_path.clone(), registry_arc, app.handle().clone()) {
+                    let guard_arc = Arc::clone(&app.state::<RenameGuardState>().0);
+                    match watcher::start(vault_path.clone(), registry_arc, app.handle().clone(), guard_arc) {
                         Ok(w) => *app.state::<WatcherState>().0.lock().unwrap() = Some(w),
                         Err(e) => log::warn!("Failed to start file watcher: {e}"),
                     }

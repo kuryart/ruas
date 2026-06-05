@@ -1,5 +1,6 @@
 pub mod appearance;
 pub mod contacts;
+pub mod filename;
 pub mod index;
 pub mod module;
 pub mod notes;
@@ -32,5 +33,6 @@ pub use module::{
     // Settings API (Point 2)
     ModuleSettings, SelectOption, SettingField, SettingKind,
 };
+pub use filename::{sanitize_filename, unique_filename};
 pub use index::{IndexManager, SearchResult};
 pub use vault::{VaultConfig, create_vault, validate_vault};

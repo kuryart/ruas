@@ -175,6 +175,32 @@ impl IndexManager {
         tx.commit().map_err(|e| format!("index: links commit: {e}"))
     }
 
+    /// Atomically update the path key for a renamed file across all index tables.
+    ///
+    /// Must be called *after* the on-disk rename so the index stays consistent.
+    /// The UID → path mapping in `files` is preserved — `ruas://` links keep
+    /// resolving correctly.
+    pub fn rename(&self, old_path: &str, new_path: &str) -> Result<(), String> {
+        let mut conn = self.db.lock().unwrap();
+        let tx = conn.transaction().map_err(|e| format!("index: rename tx: {e}"))?;
+        tx.execute(
+            "UPDATE files SET path = ?2 WHERE path = ?1",
+            params![old_path, new_path],
+        )
+        .map_err(|e| format!("index: rename files: {e}"))?;
+        tx.execute(
+            "UPDATE fts SET path = ?2 WHERE path = ?1",
+            params![old_path, new_path],
+        )
+        .map_err(|e| format!("index: rename fts: {e}"))?;
+        tx.execute(
+            "UPDATE links SET source_path = ?2 WHERE source_path = ?1",
+            params![old_path, new_path],
+        )
+        .map_err(|e| format!("index: rename links: {e}"))?;
+        tx.commit().map_err(|e| format!("index: rename commit: {e}"))
+    }
+
     /// Drop and rebuild the FTS index from the `files` table.
     /// Use after bulk upserts to ensure consistency.
     pub fn rebuild_fts(&self) -> Result<(), String> {
@@ -401,5 +427,42 @@ mod tests {
         // Search without diacritics should still find the entry
         let results = idx.search("Sao Paulo", 10).unwrap();
         assert!(!results.is_empty(), "unicode61 diacritic folding must match 'Sao' → 'São'");
+    }
+
+    #[test]
+    fn rename_updates_path_keeps_uid() {
+        let idx = temp_index();
+        idx.upsert("/vault/notes/old.md", Some("uid-r1"), "note", Some("Nota"), "corpo").unwrap();
+        idx.set_links(
+            "/vault/notes/old.md",
+            Some("Nota"),
+            &[("alvo".into(), "contexto".into())],
+        )
+        .unwrap();
+
+        idx.rename("/vault/notes/old.md", "/vault/notes/Nota.md").unwrap();
+
+        // UID still resolves to the new path
+        assert_eq!(
+            idx.path_for_uid("uid-r1").unwrap().as_deref(),
+            Some("/vault/notes/Nota.md")
+        );
+        // Old path is gone
+        assert!(idx.path_for_uid("uid-r1").unwrap().unwrap() != "/vault/notes/old.md");
+        // FTS still finds the note via new path
+        let hits = idx.search("corpo", 10).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].path, "/vault/notes/Nota.md");
+        // Links table updated
+        let back = idx.backlinks(&["alvo".into()]).unwrap();
+        assert_eq!(back[0].0, "/vault/notes/Nota.md");
+    }
+
+    #[test]
+    fn rename_nonexistent_path_is_noop() {
+        let idx = temp_index();
+        // Should not fail even if path doesn't exist in the index
+        idx.rename("/ghost.md", "/ghost2.md").unwrap();
+        assert_eq!(idx.count().unwrap(), 0);
     }
 }

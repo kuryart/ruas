@@ -1,7 +1,8 @@
-import { For, Show, createResource, createSignal } from 'solid-js';
+import { For, Show, createEffect, createResource, createSignal, on } from 'solid-js';
 import { useI18n } from '../../i18n/context';
 import { invoke } from '../../utils/api';
 import { pushHistory } from '../../stores/historyStore';
+import { notesVersion } from '../../stores/layoutStore';
 import { navigateToNote, openNotePermanent } from '../workspace/workspaceStore';
 import ContextMenu, { type ContextMenuItem } from '../shared/ContextMenu';
 import ConfirmDialog from '../shared/ConfirmDialog';
@@ -72,6 +73,10 @@ export default function NotesList() {
   const [tree, { refetch: refetchTree }] = createResource<TreeNode[]>(() => invoke<TreeNode[]>('list_notes_tree'));
 
   const refetch = async () => { await Promise.all([refetchNotes(), refetchTree()]); };
+
+  createEffect(on(notesVersion, () => {
+    void Promise.all([refetchNotes(), refetchTree()]);
+  }, { defer: true }));
 
   function toggleDir(path: string) {
     setCollapsed(prev => {

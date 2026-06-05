@@ -5,7 +5,8 @@ import { useI18n } from '../../i18n/context';
 import { invoke } from '../../utils/api';
 import { buildDocument, loadYaml, splitFrontmatter } from '../../utils/frontmatter';
 import { invalidateContacts } from '../../stores/contactsStore';
-import { promotePreviewByPath, updateTabTitle } from '../workspace/workspaceStore';
+import { promotePreviewByPath, updateTabTitle, focusedPanelId, panels } from '../workspace/workspaceStore';
+import { setActiveNote, clearActiveNote, setActiveNoteBody } from '../../stores/layoutStore';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -133,7 +134,7 @@ function TypeInput(props: { value: string; placeholder: string; onChange: (v: st
 
 // ── Main component ─────────────────────────────────────────────────────────
 
-export default function ContactDetail(props: { path: string }) {
+export default function ContactDetail(props: { path: string; panelId: string }) {
 	const { t } = useI18n();
 
 	const [contact] = createResource(() => props.path, path => invoke<Contact>('read_contact', { path }));
@@ -157,6 +158,26 @@ export default function ContactDetail(props: { path: string }) {
 	let newPropKeyRef: HTMLInputElement | undefined;
 	let saveTimer: ReturnType<typeof setTimeout> | undefined;
 	let promoted = false;
+
+	const isActiveSurface = () => {
+		if (focusedPanelId() !== props.panelId) return false;
+		const p = panels[props.panelId];
+		const tab = p?.tabs.find(t => t.id === p.activeTabId);
+		return !!tab && tab.content.type === 'contact-detail' &&
+			(tab.content as { contactPath: string }).contactPath === props.path;
+	};
+
+	createEffect(() => {
+		if (isActiveSurface()) {
+			setActiveNote(prev => (prev && prev.path === props.path ? prev : { path: props.path, onJump: () => {} }));
+		} else {
+			clearActiveNote(props.path);
+		}
+	});
+
+	createEffect(() => {
+		if (isActiveSurface()) setActiveNoteBody(body());
+	});
 
 	// ── Status bar labels (reactive) ─────────────────────────────────────
 
@@ -197,6 +218,7 @@ export default function ContactDetail(props: { path: string }) {
 
 	onCleanup(() => {
 		clearTimeout(saveTimer);
+		clearActiveNote(props.path);
 		if (saveStatus() !== 'unsaved') return;
 		if (bodyMode() === 'raw') void saveFromRaw();
 		else void invoke('save_contact', { contact: buildContact() });

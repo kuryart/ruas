@@ -11,14 +11,10 @@
             "id": "ab88aeab3dc48d83",
             "type": "leaf",
             "state": {
-              "type": "markdown",
-              "state": {
-                "file": "dev/12-howto-new-module.md",
-                "mode": "source",
-                "source": false
-              },
+              "type": "empty",
+              "state": {},
               "icon": "lucide-file",
-              "title": "12-howto-new-module"
+              "title": "Nova aba"
             }
           }
         ]
@@ -94,7 +90,6 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "dev/12-howto-new-module.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -104,7 +99,7 @@
                 "unlinkedCollapsed": true
               },
               "icon": "links-coming-in",
-              "title": "Links inversos para 12-howto-new-module"
+              "title": "Links inversos"
             }
           },
           {
@@ -113,12 +108,11 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "dev/12-howto-new-module.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               },
               "icon": "links-going-out",
-              "title": "Links de saída para 12-howto-new-module"
+              "title": "Links de saída"
             }
           },
           {
@@ -156,13 +150,12 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "dev/12-howto-new-module.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
               },
               "icon": "lucide-list",
-              "title": "Sumário de 12-howto-new-module"
+              "title": "Sumário"
             }
           }
         ]
@@ -184,27 +177,40 @@
   },
   "active": "ab88aeab3dc48d83",
   "lastOpenFiles": [
+    "dev/00-index.md.tmp.1114493.7f21e1fa0175",
+    "dev/14-filename-strategy.md",
+    "dev/14-filename-strategy.md.tmp.1114493.4ea0a01d620c",
+    "dev/03-core-index.md.tmp.1114493.f5597b8cb778",
+    "theming.md",
     "screenshots/latex-error.png",
-    "screenshots/swappy-20260603_213255.png",
     "screenshots",
+    "ruas-logo.psd",
+    "ruas-icon.psd",
+    "ruas-icon.png",
+    "locale.md",
+    "examples/obsidian-example.png",
+    "examples/notes-correct.png",
+    "examples/layout.excalidraw.png",
+    "examples/contacts-broken.png",
+    "examples",
+    "dev/13-howto-new-ui-view.md",
+    "dev/12-howto-new-module.md",
     "dev/11-styling.md",
     "dev/10-i18n.md",
+    "dev/09-frontend-editor.md",
+    "dev/08-frontend-stores.md",
     "dev/07-frontend-workspace.md",
+    "dev/06-http-api.md",
     "dev/05-tauri-shell.md",
     "dev/04-core-data-model.md",
-    "examples/notes-correct.png",
-    "examples/contacts-broken.png",
-    "examples/notes-example.png",
-    "examples/contacts-example.png",
-    "architecture.png",
-    "examples/architecture.png",
-    "examples/obsidian-example.png",
-    "examples/layout.excalidraw.png",
-    "examples/swappy-20260603_013148.png",
-    "examples",
     "dev/03-core-index.md",
     "dev/02-core-module-system.md",
     "dev/01-architecture.md",
-    "dev/00-index.md"
+    "dev/00-index.md",
+    "dev",
+    "screenshots/swappy-20260603_213255.png",
+    "examples/notes-example.png",
+    "examples/contacts-example.png",
+    "architecture.png"
   ]
 }

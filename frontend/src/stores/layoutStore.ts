@@ -88,3 +88,15 @@ export { activeNote, setActiveNote, activeNoteBody, setActiveNoteBody };
 export function clearActiveNote(path: string) {
   setActiveNote(prev => (prev && prev.path === path ? null : prev));
 }
+
+// ── Notes list invalidation ─────────────────────────────────────────────────
+// Incremented by NoteDetail after every successful save so NotesList can
+// refetch without polling.
+
+const [notesVersion, setNotesVersion] = createSignal(0);
+
+export { notesVersion };
+
+export function invalidateNotesList() {
+  setNotesVersion(v => v + 1);
+}

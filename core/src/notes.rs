@@ -398,6 +398,7 @@ fn split_frontmatter(content: &str) -> Result<(NoteFrontmatter, String), String>
 
 // ── Module implementation ──────────────────────────────────────────────────
 
+use crate::filename::{sanitize_filename, unique_filename};
 use crate::module::{
     Capability, CommandDescriptor, DispatchResult, Module, ModuleEvent, ModuleInfo,
     ParamDescriptor, ParamKind, SettingField, VaultContext, Version,

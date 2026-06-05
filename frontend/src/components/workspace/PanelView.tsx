@@ -43,7 +43,10 @@ function TabContent(props: { tab: Tab; panelId: string }) {
         <ContactsList />
       </Match>
       <Match when={props.tab.content.type === 'contact-detail'}>
-        <ContactDetail path={(props.tab.content as { type: 'contact-detail'; contactPath: string }).contactPath} />
+        <ContactDetail
+          path={(props.tab.content as { type: 'contact-detail'; contactPath: string }).contactPath}
+          panelId={props.panelId}
+        />
       </Match>
       <Match when={props.tab.content.type === 'notes-list'}>
         <NotesList />

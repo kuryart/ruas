@@ -63,12 +63,16 @@ pub struct VaultContext<'a> {
     pub events: &'a dyn EventSink,
     /// Shared SQLite index — `None` when the index is unavailable (e.g. tests).
     index: Option<Arc<IndexManager>>,
+    /// Set of paths the app is currently renaming on disk.
+    /// The file watcher checks this before processing `FileDeleted` events so
+    /// that programmatic renames don't corrupt the index.
+    rename_guard: Option<Arc<std::sync::Mutex<std::collections::HashSet<String>>>>,
 }
 
 impl<'a> VaultContext<'a> {
     /// Standard constructor. Index is not available — use `with_index` to add it.
     pub fn new(vault_path: &'a Path, events: &'a dyn EventSink) -> Self {
-        Self { vault_path, events, index: None }
+        Self { vault_path, events, index: None, rename_guard: None }
     }
 
     /// Attach the shared index to this context (called by the registry).
@@ -77,9 +81,29 @@ impl<'a> VaultContext<'a> {
         self
     }
 
+    /// Attach the rename guard (called by the registry when one is configured).
+    pub(crate) fn with_rename_guard(
+        mut self,
+        guard: Arc<std::sync::Mutex<std::collections::HashSet<String>>>,
+    ) -> Self {
+        self.rename_guard = Some(guard);
+        self
+    }
+
     /// Access the SQLite index. Returns `None` when unavailable (no vault, test context).
     pub fn index(&self) -> Option<&IndexManager> {
         self.index.as_deref()
+    }
+
+    /// Register `old_path` as an in-progress programmatic rename.
+    ///
+    /// Call this before `std::fs::rename`; the file watcher will skip the
+    /// corresponding `FileDeleted` event so the index stays intact.
+    /// The entry is removed when the watcher handles the `FileDeleted`.
+    pub fn guard_rename(&self, old_path: &str) {
+        if let Some(guard) = &self.rename_guard {
+            guard.lock().unwrap().insert(old_path.to_string());
+        }
     }
 
     /// Convenience accessor for this module's persisted configuration.
@@ -177,11 +201,14 @@ pub struct ModuleRegistry {
     entries: Vec<RegistryEntry>,
     /// Shared SQLite index — set on vault open, cleared on vault close.
     index: Option<Arc<IndexManager>>,
+    /// Shared rename guard — set by the Tauri layer so that programmatic
+    /// file renames don't trigger spurious `FileDeleted` index removals.
+    rename_guard: Option<Arc<std::sync::Mutex<std::collections::HashSet<String>>>>,
 }
 
 impl ModuleRegistry {
     pub fn new() -> Self {
-        Self { entries: Vec::new(), index: None }
+        Self { entries: Vec::new(), index: None, rename_guard: None }
     }
 
     /// Access the active index (if a vault is open).
@@ -192,6 +219,22 @@ impl ModuleRegistry {
     /// Cloneable handle to the index — passed to file watcher threads.
     pub fn index_arc(&self) -> Option<Arc<IndexManager>> {
         self.index.clone()
+    }
+
+    /// Attach the rename guard. Called once by the Tauri layer after building
+    /// the registry. The same `Arc` must be shared with the file watcher.
+    pub fn set_rename_guard(
+        &mut self,
+        guard: Arc<std::sync::Mutex<std::collections::HashSet<String>>>,
+    ) {
+        self.rename_guard = Some(guard);
+    }
+
+    /// Cloneable handle to the rename guard — passed to the file watcher.
+    pub fn rename_guard_arc(
+        &self,
+    ) -> Option<Arc<std::sync::Mutex<std::collections::HashSet<String>>>> {
+        self.rename_guard.clone()
     }
 
     // ── Registration ───────────────────────────────────────────────────
@@ -239,8 +282,12 @@ impl ModuleRegistry {
 
     fn make_ctx<'a>(&self, vault_path: &'a Path, events: &'a dyn EventSink) -> VaultContext<'a> {
         let ctx = VaultContext::new(vault_path, events);
-        match &self.index {
+        let ctx = match &self.index {
             Some(idx) => ctx.with_index(Arc::clone(idx)),
+            None => ctx,
+        };
+        match &self.rename_guard {
+            Some(guard) => ctx.with_rename_guard(Arc::clone(guard)),
             None => ctx,
         }
     }
