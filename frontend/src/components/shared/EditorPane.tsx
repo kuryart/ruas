@@ -123,6 +123,7 @@ export default function EditorPane(props: {
       state: EditorState.create({ doc: props.content, extensions: buildExtensions(props.mode) }),
       parent: container,
     });
+    (window as any)._cmView = view;
     props.onReady?.({ scrollToLine });
     if (props.scrollTarget) scrollToBlock(props.scrollTarget);
   });

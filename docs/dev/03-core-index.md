@@ -68,6 +68,7 @@ CREATE INDEX idx_links_target ON links(target_key);
 |---|---|---|
 | `upsert(path, uid, entity, title, body)` | `(&str, Option<&str>, &str, Option<&str>, &str) -> Result<()>` | DELETE + INSERT para consistência do FTS5; chame ao criar/salvar arquivo |
 | `remove(path)` | `(&str) -> Result<()>` | Remove de `files`, `fts` e `links`; chame ao deletar arquivo |
+| `rename(old_path, new_path)` | `(&str, &str) -> Result<()>` | Atualiza o path em `files`, `fts` e `links` numa única transaction; chame *após* o `fs::rename` em disco |
 | `set_links(source_path, source_title, links)` | `(&str, &str, &[(String, String)]) -> Result<()>` | Substitui atomicamente todos os links de `source_path`; `links` = `[(target_key, context)]` |
 | `rebuild_fts()` | `() -> Result<()>` | Re-popula o FTS5 a partir de `files`; use em bulk reindex |
 

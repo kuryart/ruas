@@ -1,5 +1,6 @@
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use ruas_core::{ModuleEvent, ModuleRegistry};
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -7,11 +8,18 @@ use std::sync::{Arc, Mutex};
 ///
 /// Translates `notify` events for `.md` files into `ModuleEvent`s and
 /// dispatches them to all registered modules via the registry.
+///
+/// `rename_guard` is a set of paths that the app itself is about to rename.
+/// `FileDeleted` events for paths in this set are suppressed so that
+/// programmatic renames don't corrupt the index (the `FileCreated` for the
+/// new path is still processed and re-indexes the file normally).
+///
 /// Returns the live watcher — drop it to stop watching.
 pub fn start(
     vault_path: PathBuf,
     registry: Arc<Mutex<ModuleRegistry>>,
     app: tauri::AppHandle,
+    rename_guard: Arc<Mutex<HashSet<String>>>,
 ) -> Result<RecommendedWatcher, String> {
     let (tx, rx) = std::sync::mpsc::channel::<notify::Result<Event>>();
 
@@ -61,10 +69,21 @@ pub fn start(
             let reg = registry.lock().unwrap();
             for path in md_paths {
                 let path_str = path.to_string_lossy().to_string();
+
                 let evt = match &kind {
                     EventKind::Create(_) => ModuleEvent::FileCreated { path: path_str },
                     EventKind::Modify(_) => ModuleEvent::FileModified { path: path_str },
-                    EventKind::Remove(_) => ModuleEvent::FileDeleted { path: path_str },
+                    EventKind::Remove(_) => {
+                        // Skip delete events that are part of an app-initiated rename.
+                        // The guard entry is consumed here; the subsequent FileCreated
+                        // for the new path proceeds normally and re-indexes the file.
+                        let guarded = rename_guard.lock().unwrap().remove(&path_str);
+                        if guarded {
+                            log::debug!("watcher: skipping guarded delete for {path_str}");
+                            continue;
+                        }
+                        ModuleEvent::FileDeleted { path: path_str }
+                    }
                     _ => continue,
                 };
                 reg.emit(&evt, &vault_path);
