@@ -485,14 +485,31 @@ impl NotesModule {
         serde_json::to_value(note).map_err(|e| e.to_string())
     }
 
-    fn cmd_create(&self, title: String, ctx: &VaultContext<'_>) -> DispatchResult {
-        let dir = self.notes_dir(ctx);
+    fn cmd_create(&self, title: String, folder: Option<String>, ctx: &VaultContext<'_>) -> DispatchResult {
+        let dir = match folder {
+            Some(ref f) => {
+                let p = std::path::Path::new(f);
+                if !p.is_dir() { return Err(format!("'{}' is not a directory", f)); }
+                p.to_path_buf()
+            }
+            None => self.notes_dir(ctx),
+        };
         let uid = Uuid::new_v4().to_string();
-        let path = dir.join(format!("{uid}.md"));
+        let resolved_title = if title.is_empty() { "Untitled".to_string() } else { title };
+        let stem = sanitize_filename(&resolved_title);
+        let filename = unique_filename(&dir, &stem);
+        let path = dir.join(&filename);
+        // If the filename was deduplicated (e.g. "Untitled 1.md"), use the
+        // actual filename stem as the display title so the UI reflects it.
+        let actual_title = filename
+            .strip_suffix(".md")
+            .unwrap_or(&filename)
+            .to_string();
+        let fm_title = if actual_title.as_str() == stem { resolved_title } else { actual_title };
         let now = Utc::now().to_rfc3339();
         let fm = NoteFrontmatter {
             uid: Some(uid.clone()),
-            title: Some(if title.is_empty() { "Untitled".to_string() } else { title }),
+            title: Some(fm_title),
             created: Some(now.clone()),
             modified: Some(now),
             ..Default::default()
@@ -510,12 +527,60 @@ impl NotesModule {
 
     fn cmd_save(&self, mut note: Note, ctx: &VaultContext<'_>) -> DispatchResult {
         note.frontmatter.modified = Some(Utc::now().to_rfc3339());
+
+        // Rename the file if the title changed and the filename no longer matches.
+        let dir = self.notes_dir(ctx);
+        let old_path = std::path::Path::new(&note.path);
+        let current_stem = old_path
+            .file_stem()
+            .map(|s| s.to_string_lossy())
+            .unwrap_or_default();
+        let desired_title = note.frontmatter.title.as_deref().unwrap_or("Untitled");
+        let desired_stem = sanitize_filename(desired_title);
+
+        if current_stem.as_ref() != desired_stem {
+            let candidate_path = dir.join(format!("{desired_stem}.md"));
+            if candidate_path != old_path {
+                // Check for name conflict: if a file with the desired name
+                // already exists and belongs to a *different* entity, reject
+                // the rename entirely (filename AND title unchanged).
+                let conflict = if candidate_path.exists() {
+                    std::fs::read_to_string(&candidate_path)
+                        .ok()
+                        .and_then(|c| parse_note(&candidate_path.to_string_lossy(), &c).ok())
+                        .and_then(|n| n.frontmatter.uid)
+                        .map_or(true, |existing_uid| {
+                            existing_uid != note.frontmatter.uid.as_deref().unwrap_or("")
+                        })
+                } else {
+                    false
+                };
+
+                if conflict {
+                    // Revert the title to match the current filename stem so
+                    // the UI reflects the reality that the rename was rejected.
+                    note.frontmatter.title = Some(current_stem.to_string());
+                } else {
+                    let old_path_str = note.path.clone();
+                    if old_path.exists() {
+                        ctx.guard_rename(&old_path_str);
+                        std::fs::rename(&old_path_str, &candidate_path)
+                            .map_err(|e| format!("rename failed: {e}"))?;
+                        if let Some(index) = ctx.index() {
+                            index.rename(&old_path_str, &candidate_path.to_string_lossy())?;
+                        }
+                    }
+                    note.path = candidate_path.to_string_lossy().to_string();
+                }
+            }
+        }
+
         let content = serialize_note(&note.frontmatter, &note.body)?;
         std::fs::write(&note.path, content).map_err(|e| e.to_string())?;
         if let Some(uid) = &note.frontmatter.uid {
             ctx.events.emit(ModuleEvent::NoteSaved { uid: uid.clone() });
         }
-        Ok(Value::Null)
+        serde_json::to_value(note).map_err(|e| e.to_string())
     }
 
     fn cmd_list_blocks(&self, path: &str) -> DispatchResult {
@@ -592,6 +657,71 @@ impl NotesModule {
         }
         std::fs::remove_dir_all(&target).map_err(|e| e.to_string())?;
         Ok(Value::Null)
+    }
+
+    fn cmd_rename_folder(&self, path: &str, new_name: &str, ctx: &VaultContext<'_>) -> DispatchResult {
+        let safe_name = new_name.trim().replace(['/', '\\', '\0'], "_");
+        if safe_name.is_empty() { return Err("folder name cannot be empty".into()); }
+        let src = std::path::Path::new(path);
+        let new_path = src.parent().ok_or("cannot rename root folder")?.join(&safe_name);
+        if new_path == src { return Ok(Value::Null); }
+        if new_path.exists() { return Err(format!("'{}' already exists in this location", safe_name)); }
+        if !src.exists() { return Err("folder no longer exists".into()); }
+        let old_path_str = path.to_string();
+        ctx.guard_rename(&old_path_str);
+        std::fs::rename(src, &new_path).map_err(|e| format!("rename folder failed: {e}"))?;
+        if let Some(index) = ctx.index() { index.rename(&old_path_str, &new_path.to_string_lossy())?; }
+        serde_json::to_value(new_path.to_string_lossy().to_string()).map_err(|e| e.to_string())
+    }
+
+    fn cmd_move(&self, path: &str, folder: &str, ctx: &VaultContext<'_>) -> DispatchResult {
+        let notes_dir = self.notes_dir(ctx);
+        let src = std::path::Path::new(path);
+        let src_is_dir = src.is_dir();
+        let dest_dir = std::path::Path::new(folder);
+
+        // Validate destination is inside notes/
+        let base = notes_dir.canonicalize().map_err(|e| e.to_string())?;
+        let dest_canon = dest_dir.canonicalize()
+            .map_err(|_| format!("destination folder not found: '{}'", folder))?;
+        if !dest_canon.starts_with(&base) {
+            return Err("destination is outside the notes directory".into());
+        }
+        if !dest_canon.is_dir() {
+            return Err(format!("'{}' is not a directory", folder));
+        }
+
+        // No-op: source is already in the destination folder.
+        let src_parent = src.parent().and_then(|p| p.canonicalize().ok());
+        if src_parent.as_ref() == Some(&dest_canon) {
+            return Ok(Value::Null);
+        }
+
+        let fname = src.file_name().ok_or("source has no filename")?;
+        let new_path = dest_canon.join(fname);
+        if new_path == src {
+            return Ok(Value::Null);
+        }
+        if new_path.exists() {
+            return Err(format!("'{}' already exists in the destination folder", fname.to_string_lossy()));
+        }
+        if !src.exists() {
+            return Err(format!("'{}' no longer exists; it may have been moved or deleted", path));
+        }
+
+        let old_path_str = path.to_string();
+        ctx.guard_rename(&old_path_str);
+        std::fs::rename(src, &new_path).map_err(|e| format!("move failed: {e}"))?;
+        if let Some(index) = ctx.index() {
+            index.rename(&old_path_str, &new_path.to_string_lossy())?;
+        }
+
+        if src_is_dir {
+            return serde_json::to_value(new_path.to_string_lossy().to_string()).map_err(|e| e.to_string());
+        }
+        let content = std::fs::read_to_string(&new_path).map_err(|e| e.to_string())?;
+        let note = parse_note(&new_path.to_string_lossy(), &content)?;
+        serde_json::to_value(note).map_err(|e| e.to_string())
     }
 }
 
@@ -704,7 +834,8 @@ impl Module for NotesModule {
             }
             "create" => {
                 let title = args["title"].as_str().unwrap_or("").to_string();
-                self.cmd_create(title, ctx)
+                let folder = args["folder"].as_str().map(|s| s.to_string());
+                self.cmd_create(title, folder, ctx)
             }
             "save" => {
                 let note: Note = serde_json::from_value(args["note"].clone())
@@ -732,6 +863,16 @@ impl Module for NotesModule {
                 self.cmd_backlinks(path, ctx)
             }
             "tree" => self.cmd_tree(ctx),
+            "move" => {
+                let path = args["path"].as_str().ok_or("missing required param: path")?;
+                let folder = args["folder"].as_str().ok_or("missing required param: folder")?;
+                self.cmd_move(path, folder, ctx)
+            }
+            "rename_folder" => {
+                let path = args["path"].as_str().ok_or("missing required param: path")?;
+                let name = args["name"].as_str().ok_or("missing required param: name")?;
+                self.cmd_rename_folder(path, name, ctx)
+            }
             _ => Err(format!("Unknown command: {command}")),
         }
     }

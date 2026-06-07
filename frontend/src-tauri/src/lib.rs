@@ -215,10 +215,16 @@ pub fn run() {
             vault::get_active_vault,
             // Typed contacts commands (thin adapters over invoke_module)
             contacts::list_contacts,
+            contacts::list_contacts_tree,
             contacts::read_contact,
             contacts::save_contact,
             contacts::create_contact,
             contacts::delete_contact,
+            contacts::create_contact_folder,
+            contacts::delete_contact_folder,
+            contacts::move_contact,
+            contacts::get_contacts_dir,
+            contacts::rename_contact_folder,
             // Typed notes commands (thin adapters over invoke_module)
             notes::list_notes,
             notes::read_note,
@@ -231,6 +237,9 @@ pub fn run() {
             notes::list_notes_tree,
             notes::create_folder,
             notes::delete_folder,
+            notes::move_note,
+            notes::get_notes_dir,
+            notes::rename_note_folder,
             // Appearance (user themes & snippets)
             appearance::list_appearance,
             appearance::read_appearance_css,

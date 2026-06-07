@@ -51,6 +51,7 @@ pnpm dev          # apenas Astro, sem janela Tauri
 | [12-howto-new-module.md](12-howto-new-module.md) | Guia passo a passo para novo módulo backend |
 | [13-howto-new-ui-view.md](13-howto-new-ui-view.md) | Guia passo a passo para nova view no workspace |
 | [14-filename-strategy.md](14-filename-strategy.md) | Nomes de arquivo por título, sanitização, rename guard, fluxo completo |
+| [15-finances-module.md](15-finances-module.md) | Módulo de finanças — contas, transações, validação e linking com contatos |
 
 Documentação adicional:
 - [../theming.md](../theming.md) — guia de temas e snippets CSS (foco no usuário)

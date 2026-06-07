@@ -1,6 +1,7 @@
 # Módulo de contatos
 
 contacts-header = Contatos
+contacts-untitled = Sem título
 contacts-new-btn-title = Novo contato
 
 contacts-search-placeholder = Buscar contatos…
@@ -64,3 +65,15 @@ contact-status-saving = ◌ Salvando…
 contact-status-error = ● Erro ao salvar
 
 contacts-history-create = Criar contato
+
+# ── Menu de contexto ──────────────────────────────────────────────────────
+
+contacts-ctx-new-contact = Novo contato
+contacts-ctx-new-folder = Nova pasta
+contacts-ctx-delete = Excluir
+contacts-ctx-rename = Renomear
+contacts-ctx-delete-confirm = Excluir este contato?
+contacts-ctx-delete-folder-confirm = Excluir esta pasta e todo o seu conteúdo?
+contacts-ctx-folder-name-prompt = Nome da pasta:
+contacts-ctx-folder-default-name = Nova pasta
+contacts-ctx-rename-prompt = Novo nome:

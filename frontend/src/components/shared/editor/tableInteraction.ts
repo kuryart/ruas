@@ -1,5 +1,5 @@
-import { Decoration, type DecorationSet, EditorView, keymap, showTooltip, type Tooltip } from '@codemirror/view';
-import { type Extension, StateEffect, StateField } from '@codemirror/state';
+import { Decoration, type DecorationSet, EditorView, keymap, showTooltip, type Tooltip, ViewPlugin, type ViewUpdate } from '@codemirror/view';
+import { type Extension, StateEffect, StateField, type Range } from '@codemirror/state';
 import { syntaxTree } from '@codemirror/language';
 
 // ── Table model ──────────────────────────────────────────────────────────────
@@ -17,12 +17,55 @@ interface TModel {
   cols: number; // logical column count (header)
 }
 
-function parsePipes(text: string, lineFrom: number): number[] {
+export function parsePipes(text: string, lineFrom: number): number[] {
   const pipes: number[] = [];
+  let inWikiLink = false;
   for (let i = 0; i < text.length; i++) {
-    if (text[i] === '|' && (i === 0 || text[i - 1] !== '\\')) pipes.push(lineFrom + i);
+    if (text[i] === '[' && text[i + 1] === '[') { inWikiLink = true; }
+    if (text[i] === ']' && text[i + 1] === ']') { inWikiLink = false; }
+    if (text[i] === '|') {
+      if (i > 0 && text[i - 1] === '\\') continue; // escaped \|
+      if (inWikiLink) continue;                      // alias pipe in [[...]]
+      pipes.push(lineFrom + i);
+    }
   }
   return pipes;
+}
+
+/**
+ * Split a table row string by '|' into cells, respecting:
+ * - `\|` escaped pipes (treated as literal `|` in cell content)
+ * - `|` inside `[[...]]` wiki links (not a column separator)
+ */
+export function splitTableCells(line: string): string[] {
+  const cells: string[] = [];
+  let current = '';
+  let inWiki = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '[' && line[i + 1] === '[') { inWiki = true; }
+    if (ch === ']' && line[i + 1] === ']') { inWiki = false; }
+    if (ch === '\\' && line[i + 1] === '|') {
+      current += '|';
+      i++;
+      continue;
+    }
+    if (ch === '|' && !inWiki) {
+      cells.push(current.trim());
+      current = '';
+      continue;
+    }
+    current += ch;
+  }
+  cells.push(current.trim());
+  // Trim leading/trailing empty cells from the full line
+  if (cells.length > 1) {
+    // Remove leading empty if line starts with |
+    if (cells[0] === '' && (line.trimStart()[0] === '|')) cells.shift();
+    // Remove trailing empty if line ends with |
+    if (cells.length > 0 && cells[cells.length - 1] === '' && line.trimEnd().endsWith('|')) cells.pop();
+  }
+  return cells;
 }
 
 function parseTable(state: EditorView['state'], from: number, to: number): TModel {
@@ -282,3 +325,38 @@ export function tableInteraction(): Extension {
     ]),
   ];
 }
+
+// ── Visual table renderer (edit mode, optional) ──────────────────────────────
+
+const delimLineDeco = Decoration.line({
+  attributes: {
+    style: 'font-size:0;line-height:0;overflow:hidden;display:block;height:1px;margin:2px 0;border-bottom:1px solid var(--surface1)',
+  },
+});
+
+function buildTableDecos(view: EditorView): DecorationSet {
+  const allRanges: Range<Decoration>[] = [];
+  const doc = view.state.doc;
+  syntaxTree(view.state).iterate({
+    enter: (node) => {
+      if (node.name !== 'Table') return;
+      let ln = doc.lineAt(node.from).number;
+      const endLn = doc.lineAt(Math.max(node.from, node.to - 1)).number;
+      for (; ln <= endLn; ln++) {
+        const line = doc.line(ln);
+        if (/^[\s|:-]+$/.test(line.text) && line.text.includes('-')) {
+          allRanges.push(delimLineDeco.range(line.from));
+        }
+      }
+    },
+  });
+  return Decoration.set(allRanges, true);
+}
+
+const tableRenderPlugin = ViewPlugin.fromClass(class {
+  decorations: DecorationSet;
+  constructor(view: EditorView) { this.decorations = buildTableDecos(view); }
+  update(u: ViewUpdate) { if (u.docChanged || u.viewportChanged) this.decorations = buildTableDecos(u.view); }
+}, { decorations: v => v.decorations });
+
+export function tableRenderer(): Extension { return tableRenderPlugin; }

@@ -4,7 +4,7 @@ import { invoke } from '../../utils/api';
 import { buildDocument, loadYaml, splitFrontmatter } from '../../utils/frontmatter';
 import {
   canGoBack, canGoForward, goBack, goForward,
-  promoteNotePreviewByPath, updateNoteTabTitle,
+  promoteNotePreviewByPath, updateNoteTabTitle, updateNoteTabPath,
   focusedPanelId, panels,
 } from '../workspace/workspaceStore';
 import { pendingBlock, setPendingBlock } from '../../stores/blockTargetStore';
@@ -40,9 +40,15 @@ type SaveStatus = 'saved' | 'unsaved' | 'saving' | 'error';
 export default function NoteDetail(props: { path: string; panelId: string }) {
   const { t } = useI18n();
 
-  const [note] = createResource(() => props.path, path =>
-    invoke<Note>('read_note', { path }),
-  );
+  const [note] = createResource(() => props.path, async path => {
+    try {
+      return await invoke<Note>('read_note', { path });
+    } catch {
+      // File may have been renamed by a concurrent save — the resource will
+      // re-fire with the updated path from the tab store shortly.
+      return undefined;
+    }
+  });
 
   const [mode, setMode] = createSignal<NoteMode>('edit');
   const [title, setTitle] = createSignal('');
@@ -195,7 +201,20 @@ export default function NoteDetail(props: { path: string; panelId: string }) {
     };
     setSaveStatus('saving');
     try {
-      await invoke('save_note', { note: payload });
+      const result = await invoke<Note>('save_note', { note: payload });
+      if (result) {
+        if (result.path !== path) {
+          updateNoteTabPath(path, result.path);
+          setActivePath(result.path);
+        }
+        // Sync the title back from the result — the backend may have reverted
+        // it on a naming conflict, so the UI must reflect the actual state.
+        const newTitle = result.frontmatter.title ?? t('notes-untitled');
+        if (newTitle !== title()) {
+          setTitle(newTitle);
+          updateNoteTabTitle(result.path, newTitle);
+        }
+      }
       setSaveStatus('saved');
       invalidateNotesList();
     } catch {
@@ -218,7 +237,9 @@ export default function NoteDetail(props: { path: string; panelId: string }) {
   function onTitleChange(v: string) {
     promoteOnce(); setTitle(v);
     updateNoteTabTitle(props.path, v || t('notes-untitled'));
-    scheduleSave();
+    // Title changes are buffered locally — save happens on Enter or blur, not
+    // on every keystroke (per filename strategy spec).
+    setSaveStatus('unsaved');
   }
 
   function onFmChange(next: Frontmatter) {
@@ -300,6 +321,8 @@ export default function NoteDetail(props: { path: string; panelId: string }) {
             placeholder={t('notes-untitled')}
             onInput={e => onTitleChange((e.target as HTMLInputElement).value)}
             onFocus={() => promoteOnce()}
+            onBlur={() => { if (saveStatus() === 'unsaved') { clearTimeout(saveTimer); void saveNow(); } }}
+            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).blur(); } }}
           />
           <div style={{ display: 'flex', gap: '2px', 'flex-shrink': '0', background: 'var(--surface0)', 'border-radius': '6px', padding: '2px' }}>
             <ModeBtn m="view" labelKey="notes-mode-view" />

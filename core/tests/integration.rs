@@ -37,7 +37,9 @@ fn open_vault_with_notes(notes: &[(&str, &str, &str)]) -> (TempDir, ModuleRegist
             ..Default::default()
         };
         let content = serialize_note(&fm, body).unwrap();
-        std::fs::write(notes_dir.join(format!("{uid}.md")), content).unwrap();
+        let stem = ruas_core::sanitize_filename(title);
+        let filename = ruas_core::unique_filename(&notes_dir, &stem);
+        std::fs::write(notes_dir.join(&filename), content).unwrap();
     }
     let mut reg = ModuleRegistry::new();
     reg.register(NotesModule::default());
@@ -64,6 +66,9 @@ fn notes_create_writes_file_to_disk() {
     let note: Note = serde_json::from_value(result).unwrap();
     assert_eq!(note.frontmatter.title.as_deref(), Some("My Note"));
     assert!(std::path::Path::new(&note.path).exists(), "file should exist on disk");
+    // File is named after the title, not the UID.
+    assert!(note.path.ends_with("My Note.md"), "path should use sanitized title, got: {}", note.path);
+    assert!(note.frontmatter.uid.is_some(), "UID should still be set in frontmatter");
 }
 
 #[test]
@@ -72,6 +77,33 @@ fn notes_create_empty_title_defaults_to_untitled() {
     let result = dispatch_note(&reg, &vault, "create", json!({ "title": "" }));
     let note: Note = serde_json::from_value(result).unwrap();
     assert_eq!(note.frontmatter.title.as_deref(), Some("Untitled"));
+    assert!(note.path.ends_with("Untitled.md"), "empty title should produce Untitled.md, got: {}", note.path);
+}
+
+#[test]
+fn notes_create_sanitizes_forbidden_chars_in_filename() {
+    let (vault, reg) = open_vault();
+    let result = dispatch_note(&reg, &vault, "create", json!({ "title": "A/B:C*D?E\"F<G>H|I" }));
+    let note: Note = serde_json::from_value(result).unwrap();
+    // Title is preserved verbatim in frontmatter; filename is sanitized.
+    assert_eq!(note.frontmatter.title.as_deref(), Some("A/B:C*D?E\"F<G>H|I"));
+    assert!(note.path.ends_with("A_B_C_D_E_F_G_H_I.md"), "path should sanitize forbidden chars, got: {}", note.path);
+}
+
+#[test]
+fn notes_create_duplicate_title_appends_counter() {
+    let (vault, reg) = open_vault();
+    let n1: Note = serde_json::from_value(
+        dispatch_note(&reg, &vault, "create", json!({ "title": "Dup" }))
+    ).unwrap();
+    let n2: Note = serde_json::from_value(
+        dispatch_note(&reg, &vault, "create", json!({ "title": "Dup" }))
+    ).unwrap();
+    assert!(n1.path.ends_with("Dup.md"), "first should be Dup.md, got: {}", n1.path);
+    assert_eq!(n1.frontmatter.title.as_deref(), Some("Dup"), "first title unchanged");
+    assert!(n2.path.ends_with("Dup 1.md"), "second should get suffix, got: {}", n2.path);
+    assert_eq!(n2.frontmatter.title.as_deref(), Some("Dup 1"), "second title reflects dedup suffix");
+    assert_ne!(n1.path, n2.path);
 }
 
 #[test]
@@ -104,6 +136,89 @@ fn notes_save_updates_body_and_modified() {
     ).unwrap();
     assert!(read.body.contains("Updated body content."));
     assert!(read.frontmatter.modified.is_some(), "save should set modified timestamp");
+}
+
+#[test]
+fn notes_save_renames_file_when_title_changes() {
+    let (vault, reg) = open_vault();
+    let mut note: Note = serde_json::from_value(
+        dispatch_note(&reg, &vault, "create", json!({ "title": "Old Title" }))
+    ).unwrap();
+    let old_path = note.path.clone();
+    assert!(old_path.ends_with("Old Title.md"), "initial path should use title");
+
+    // Change the title and save — file should be renamed.
+    note.frontmatter.title = Some("New Title".to_string());
+    let saved: Note = serde_json::from_value(
+        dispatch_note(&reg, &vault, "save", json!({ "note": note }))
+    ).unwrap();
+
+    assert!(saved.path.ends_with("New Title.md"), "path should reflect new title, got: {}", saved.path);
+    assert!(!std::path::Path::new(&old_path).exists(), "old file should be gone");
+    assert!(std::path::Path::new(&saved.path).exists(), "new file should exist");
+}
+
+#[test]
+fn notes_save_keeps_filename_when_title_unchanged() {
+    let (vault, reg) = open_vault();
+    let mut note: Note = serde_json::from_value(
+        dispatch_note(&reg, &vault, "create", json!({ "title": "Stable" }))
+    ).unwrap();
+    let old_path = note.path.clone();
+
+    note.body = "updated".to_string();
+    let saved: Note = serde_json::from_value(
+        dispatch_note(&reg, &vault, "save", json!({ "note": note }))
+    ).unwrap();
+
+    assert_eq!(saved.path, old_path, "path should not change when title is unchanged");
+    assert!(std::path::Path::new(&old_path).exists());
+}
+
+#[test]
+fn notes_save_rejects_rename_when_target_exists() {
+    let (vault, reg) = open_vault();
+    // Create two notes with distinct titles.
+    let a: Note = serde_json::from_value(
+        dispatch_note(&reg, &vault, "create", json!({ "title": "Conflict A" }))
+    ).unwrap();
+    let mut b: Note = serde_json::from_value(
+        dispatch_note(&reg, &vault, "create", json!({ "title": "Conflict B" }))
+    ).unwrap();
+    let b_old_path = b.path.clone();
+    assert!(b_old_path.ends_with("Conflict B.md"), "B should start with its own name");
+
+    // Try to rename B to A's name — should be rejected (different UID).
+    b.frontmatter.title = Some("Conflict A".to_string());
+    let saved: Note = serde_json::from_value(
+        dispatch_note(&reg, &vault, "save", json!({ "note": b }))
+    ).unwrap();
+
+    // Path should NOT have changed — the rename was rejected.
+    assert_eq!(saved.path, b_old_path, "rename should be rejected when target belongs to a different note");
+    // Title should be reverted to match the current filename stem.
+    assert_eq!(saved.frontmatter.title.as_deref(), Some("Conflict B"), "title should be reverted on conflict");
+    // Both files still exist.
+    assert!(std::path::Path::new(&a.path).exists());
+    assert!(std::path::Path::new(&b_old_path).exists());
+}
+
+#[test]
+fn notes_save_allows_rename_when_no_conflict() {
+    let (vault, reg) = open_vault();
+    let mut note: Note = serde_json::from_value(
+        dispatch_note(&reg, &vault, "create", json!({ "title": "Old Name" }))
+    ).unwrap();
+    let old_path = note.path.clone();
+
+    note.frontmatter.title = Some("New Name".to_string());
+    let saved: Note = serde_json::from_value(
+        dispatch_note(&reg, &vault, "save", json!({ "note": note }))
+    ).unwrap();
+
+    assert!(saved.path.ends_with("New Name.md"), "path should reflect new unique title, got: {}", saved.path);
+    assert!(!std::path::Path::new(&old_path).exists(), "old file should be gone");
+    assert!(std::path::Path::new(&saved.path).exists(), "new file should exist");
 }
 
 #[test]
@@ -250,6 +365,9 @@ fn contacts_create_writes_file_to_disk() {
     assert!(std::path::Path::new(&contact.path).exists(), "contact file should exist on disk");
     assert_eq!(contact.frontmatter.given_name.as_deref(), Some("Alice"));
     assert_eq!(contact.frontmatter.family_name.as_deref(), Some("Smith"));
+    // File is named after the display name, not the UID.
+    assert!(contact.path.ends_with("Alice Smith.md"), "path should use display name, got: {}", contact.path);
+    assert!(contact.frontmatter.uid.is_some(), "UID should still be set in frontmatter");
 }
 
 #[test]
@@ -277,13 +395,69 @@ fn contacts_save_updates_fields() {
     contact.frontmatter.email = Some(vec![
         ContactEmail { field_type: "work".to_string(), value: "carol@example.com".to_string() },
     ]);
-    dispatch_contact(&reg, &vault, "save", json!({ "contact": contact }));
+    let saved: Contact = serde_json::from_value(
+        dispatch_contact(&reg, &vault, "save", json!({ "contact": contact }))
+    ).unwrap();
 
     let read: Contact = serde_json::from_value(
-        dispatch_contact(&reg, &vault, "read", json!({ "path": contact.path }))
+        dispatch_contact(&reg, &vault, "read", json!({ "path": saved.path }))
     ).unwrap();
     let emails = read.frontmatter.email.unwrap();
     assert_eq!(emails[0].value, "carol@example.com");
+}
+
+#[test]
+fn contacts_save_renames_file_when_name_changes() {
+    let (vault, reg) = open_vault();
+    let mut contact: Contact = serde_json::from_value(
+        dispatch_contact(&reg, &vault, "create", json!({ "given_name": "Eve", "family_name": "Old" }))
+    ).unwrap();
+    let old_path = contact.path.clone();
+    assert!(old_path.ends_with("Eve Old.md"), "initial path should use display name");
+
+    // Change the full name and save — file should be renamed.
+    contact.frontmatter.full_name = Some("Eve Newname".to_string());
+    // Also update given/family to keep them consistent.
+    contact.frontmatter.given_name = Some("Eve".to_string());
+    contact.frontmatter.family_name = Some("Newname".to_string());
+    let saved: Contact = serde_json::from_value(
+        dispatch_contact(&reg, &vault, "save", json!({ "contact": contact }))
+    ).unwrap();
+
+    assert!(saved.path.ends_with("Eve Newname.md"), "path should reflect new name, got: {}", saved.path);
+    assert!(!std::path::Path::new(&old_path).exists(), "old file should be gone");
+    assert!(std::path::Path::new(&saved.path).exists(), "new file should exist");
+}
+
+#[test]
+fn contacts_save_rejects_rename_when_target_exists() {
+    let (vault, reg) = open_vault();
+    // Create two contacts with distinct names.
+    let a: Contact = serde_json::from_value(
+        dispatch_contact(&reg, &vault, "create", json!({ "given_name": "Xavier", "family_name": "Alpha" }))
+    ).unwrap();
+    assert!(a.path.ends_with("Xavier Alpha.md"));
+    let mut b: Contact = serde_json::from_value(
+        dispatch_contact(&reg, &vault, "create", json!({ "given_name": "Xavier", "family_name": "Beta" }))
+    ).unwrap();
+    let b_old_path = b.path.clone();
+    assert!(b_old_path.ends_with("Xavier Beta.md"));
+
+    // Try to rename B to A's display name — should be rejected (different UID).
+    b.frontmatter.full_name = Some("Xavier Alpha".to_string());
+    b.frontmatter.given_name = Some("Xavier".to_string());
+    b.frontmatter.family_name = Some("Alpha".to_string());
+    let saved: Contact = serde_json::from_value(
+        dispatch_contact(&reg, &vault, "save", json!({ "contact": b }))
+    ).unwrap();
+
+    // Path should NOT have changed — the rename was rejected.
+    assert_eq!(saved.path, b_old_path, "rename should be rejected when target belongs to a different contact");
+    // Display name should be reverted to match the current filename stem.
+    assert_eq!(saved.frontmatter.full_name.as_deref(), Some("Xavier Beta"), "full_name should be reverted on conflict");
+    // Both files still exist.
+    assert!(std::path::Path::new(&a.path).exists());
+    assert!(std::path::Path::new(&b_old_path).exists());
 }
 
 #[test]

@@ -17,6 +17,7 @@ module-agenda = Agenda
 module-calendar = Calendar
 module-notes = Notes
 module-email = Email
+module-finances = Finances
 module-projects = Projects
 module-new-tab = New tab
 
