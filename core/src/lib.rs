@@ -14,7 +14,7 @@ pub use appearance::{
 
 pub use contacts::{
     Contact, ContactAddress, ContactEmail, ContactFrontmatter, ContactMeta, ContactPhone,
-    ContactsModule, contact_to_meta, parse_contact, serialize_contact,
+    ContactTreeNode, ContactsModule, build_contacts_tree, contact_to_meta, parse_contact, serialize_contact,
 };
 pub use notes::{
     BacklinkMeta, BlockMeta, Note, NoteFrontmatter, NoteMeta, NoteTreeNode, NotesModule,

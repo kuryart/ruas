@@ -2,7 +2,7 @@ use crate::vault::{VaultState, get_vault_path};
 use crate::RegistryState;
 use chrono::Utc;
 use ruas_core::{
-    Contact, ContactEmail, ContactFrontmatter, ContactMeta,
+    Contact, ContactEmail, ContactFrontmatter, ContactMeta, ContactTreeNode,
     serialize_contact,
 };
 use std::fs;
@@ -52,14 +52,16 @@ pub fn save_contact(
     contact: Contact,
     state: tauri::State<VaultState>,
     registry: tauri::State<RegistryState>,
-) -> Result<(), String> {
-    dispatch(&state, &registry, "save", serde_json::json!({ "contact": contact })).map(|_| ())
+) -> Result<Contact, String> {
+    let result = dispatch(&state, &registry, "save", serde_json::json!({ "contact": contact }))?;
+    serde_json::from_value(result).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn create_contact(
     given_name: String,
     family_name: String,
+    folder: Option<String>,
     state: tauri::State<VaultState>,
     registry: tauri::State<RegistryState>,
 ) -> Result<Contact, String> {
@@ -67,7 +69,7 @@ pub fn create_contact(
         &state,
         &registry,
         "create",
-        serde_json::json!({ "given_name": given_name, "family_name": family_name }),
+        serde_json::json!({ "given_name": given_name, "family_name": family_name, "folder": folder }),
     )?;
     serde_json::from_value(result).map_err(|e| e.to_string())
 }
@@ -79,6 +81,63 @@ pub fn delete_contact(
     registry: tauri::State<RegistryState>,
 ) -> Result<(), String> {
     dispatch(&state, &registry, "delete", serde_json::json!({ "path": path })).map(|_| ())
+}
+
+#[tauri::command]
+pub fn create_contact_folder(
+    name: String,
+    state: tauri::State<VaultState>,
+    registry: tauri::State<RegistryState>,
+) -> Result<String, String> {
+    let result = dispatch(&state, &registry, "create_folder", serde_json::json!({ "name": name }))?;
+    serde_json::from_value(result).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_contact_folder(
+    path: String,
+    state: tauri::State<VaultState>,
+    registry: tauri::State<RegistryState>,
+) -> Result<(), String> {
+    dispatch(&state, &registry, "delete_folder", serde_json::json!({ "path": path })).map(|_| ())
+}
+
+#[tauri::command]
+pub fn list_contacts_tree(
+    state: tauri::State<VaultState>,
+    registry: tauri::State<RegistryState>,
+) -> Result<Vec<ContactTreeNode>, String> {
+    let result = dispatch(&state, &registry, "tree", serde_json::json!({}))?;
+    serde_json::from_value(result).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn move_contact(
+    path: String,
+    folder: String,
+    state: tauri::State<VaultState>,
+    registry: tauri::State<RegistryState>,
+) -> Result<(), String> {
+    dispatch(&state, &registry, "move", serde_json::json!({ "path": path, "folder": folder })).map(|_| ())
+}
+
+#[tauri::command]
+pub fn get_contacts_dir(
+    state: tauri::State<VaultState>,
+) -> Result<String, String> {
+    let vault_path = crate::vault::get_vault_path(&state)?;
+    Ok(vault_path.join("contacts").to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub fn rename_contact_folder(
+    path: String,
+    name: String,
+    state: tauri::State<VaultState>,
+    registry: tauri::State<RegistryState>,
+) -> Result<String, String> {
+    let result = dispatch(&state, &registry, "rename_folder", serde_json::json!({ "path": path, "name": name }))?;
+    serde_json::from_value(result).map_err(|e| e.to_string())
 }
 
 // ── Internal helpers ───────────────────────────────────────────────────────

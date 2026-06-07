@@ -5,7 +5,7 @@ import { useI18n } from '../../i18n/context';
 import { invoke } from '../../utils/api';
 import { buildDocument, loadYaml, splitFrontmatter } from '../../utils/frontmatter';
 import { invalidateContacts } from '../../stores/contactsStore';
-import { promotePreviewByPath, updateTabTitle, focusedPanelId, panels } from '../workspace/workspaceStore';
+import { promotePreviewByPath, updateTabTitle, updateContactTabPath, focusedPanelId, panels } from '../workspace/workspaceStore';
 import { setActiveNote, clearActiveNote, setActiveNoteBody } from '../../stores/layoutStore';
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -137,7 +137,14 @@ function TypeInput(props: { value: string; placeholder: string; onChange: (v: st
 export default function ContactDetail(props: { path: string; panelId: string }) {
 	const { t } = useI18n();
 
-	const [contact] = createResource(() => props.path, path => invoke<Contact>('read_contact', { path }));
+	const [contact] = createResource(() => props.path, async path => {
+		try {
+			return await invoke<Contact>('read_contact', { path });
+		} catch {
+			// File may have been renamed by a concurrent save.
+			return undefined;
+		}
+	});
 
 	const [fm, setFm] = createStore<Fm>({});
 	const [body, setBody] = createSignal('');
@@ -152,6 +159,8 @@ export default function ContactDetail(props: { path: string; panelId: string }) 
 	const [bdayEditing, setBdayEditing] = createSignal<string | null>(null);
 	const [newPropKey, setNewPropKey] = createSignal('');
 	const [newPropValue, setNewPropValue] = createSignal('');
+	// Tracks the current file path, updated after renames (mirrors note pattern).
+	const [activePath, setActivePath] = createSignal(props.path);
 
 	let tagInputRef: HTMLInputElement | undefined;
 	let bdayPickerRef: HTMLInputElement | undefined;
@@ -205,6 +214,7 @@ export default function ContactDetail(props: { path: string; panelId: string }) 
 	// the new one is still loading.
 	createEffect(on(contact, c => {
 		if (!c || c.path !== untrack(() => props.path)) return;
+		setActivePath(c.path);
 		setFm(reconcile({
 			...c.frontmatter,
 			email: c.frontmatter.email ?? [],
@@ -216,12 +226,14 @@ export default function ContactDetail(props: { path: string; panelId: string }) 
 		setLoaded(true);
 	}));
 
-	onCleanup(() => {
+	onCleanup(async () => {
 		clearTimeout(saveTimer);
 		clearActiveNote(props.path);
 		if (saveStatus() !== 'unsaved') return;
-		if (bodyMode() === 'raw') void saveFromRaw();
-		else void invoke('save_contact', { contact: buildContact() });
+		try {
+			if (bodyMode() === 'raw') await saveFromRaw();
+			else { const res = await invoke<Contact>('save_contact', { contact: buildContact() }); handleSaveRename(res); }
+		} catch { /* unmounting — best-effort save */ }
 	});
 
 	// ── Raw mode helpers ───────────────────────────────────────────────────
@@ -261,7 +273,7 @@ export default function ContactDetail(props: { path: string; panelId: string }) 
 	async function saveFromRaw() {
 		const { newFm, newBody } = parseRaw();
 		const contact: Contact = {
-			path: props.path,
+			path: activePath(),
 			frontmatter: {
 				...newFm,
 				email: newFm.email?.length ? newFm.email : undefined,
@@ -272,7 +284,8 @@ export default function ContactDetail(props: { path: string; panelId: string }) 
 			},
 			body: newBody,
 		};
-		await invoke('save_contact', { contact });
+		const result = await invoke<Contact>('save_contact', { contact });
+		handleSaveRename(result);
 	}
 
 	/** Mode transition handler — builds/parses the raw document as needed. */
@@ -306,7 +319,7 @@ export default function ContactDetail(props: { path: string; panelId: string }) 
 
 	function buildContact(): Contact {
 		return {
-			path: props.path,
+			path: activePath(),
 			frontmatter: {
 				...fm,
 				email: fm.email?.length ? fm.email : undefined,
@@ -319,6 +332,22 @@ export default function ContactDetail(props: { path: string; panelId: string }) 
 		};
 	}
 
+	/** If the contact was renamed on save, update tab references. */
+	function handleSaveRename(result: Contact | undefined) {
+		if (!result) return;
+		if (result.path !== activePath()) {
+			updateContactTabPath(activePath(), result.path);
+			setActivePath(result.path);
+		}
+		// Sync the display name back from the result — the backend may have
+		// reverted it on a naming conflict, so the UI must reflect reality.
+		const newName = (result.frontmatter as Record<string, unknown>).fn as string | undefined;
+		if (newName !== undefined && newName !== fm.fn) {
+			setFm(produce(d => { (d as Record<string, unknown>).fn = newName; }));
+			updateTabTitle(result.path, newName || t('contact-detail-no-name'));
+		}
+	}
+
 	function scheduleSave() {
 		if (!promoted) { promoted = true; promotePreviewByPath(props.path); }
 		setSaveStatus('unsaved');
@@ -326,9 +355,10 @@ export default function ContactDetail(props: { path: string; panelId: string }) 
 		saveTimer = setTimeout(async () => {
 			setSaveStatus('saving');
 			try {
-				await invoke('save_contact', { contact: buildContact() });
+				const result = await invoke<Contact>('save_contact', { contact: buildContact() });
 				setSaveStatus('saved');
 				invalidateContacts();
+				handleSaveRename(result);
 			} catch { setSaveStatus('error'); }
 		}, 800);
 	}
@@ -338,6 +368,12 @@ export default function ContactDetail(props: { path: string; panelId: string }) 
 	function setField<K extends keyof Fm>(key: K, value: Fm[K]) {
 		setFm(produce(d => { (d as Record<string, unknown>)[key] = value; }));
 		if (key === 'fn' && typeof value === 'string') updateTabTitle(props.path, value || t('contact-detail-no-name'));
+		// Name fields (fn, given-name, family-name) are buffered locally;
+		// save fires on Enter/blur, not on every keystroke (per spec).
+		if (key === 'fn' || key === 'given-name' || key === 'family-name') {
+			setSaveStatus('unsaved');
+			return;
+		}
 		scheduleSave();
 	}
 
@@ -445,6 +481,8 @@ export default function ContactDetail(props: { path: string; panelId: string }) 
 									value={fm['fn'] ?? ''}
 									placeholder={t('contact-detail-name-placeholder')}
 									onInput={e => setField('fn', (e.target as HTMLInputElement).value)}
+									onBlur={() => { if (saveStatus() === 'unsaved') { clearTimeout(saveTimer); scheduleSave(); } }}
+									onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).blur(); } }}
 								/>
 								{/* Cargo · Empresa */}
 								<div style={{ display: 'flex', gap: '6px', 'margin-top': '6px', 'align-items': 'center' }}>

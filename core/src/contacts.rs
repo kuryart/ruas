@@ -149,8 +149,58 @@ pub fn contact_to_meta(c: &Contact) -> ContactMeta {
     }
 }
 
+// ── Tree node ──────────────────────────────────────────────────────────────
+
+/// A node in the contacts folder tree. `is_dir` distinguishes folders from contacts.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContactTreeNode {
+    pub name: String,
+    pub path: String,
+    pub is_dir: bool,
+    pub children: Vec<ContactTreeNode>,
+}
+
+/// Recursively walk `dir` building a tree of folders and `.md` contacts.
+/// Contact nodes carry their display name (falling back to the file stem).
+pub fn build_contacts_tree(dir: &std::path::Path) -> Vec<ContactTreeNode> {
+    let mut nodes: Vec<ContactTreeNode> = Vec::new();
+    if let Ok(rd) = std::fs::read_dir(dir) {
+        for entry in rd.flatten() {
+            let p = entry.path();
+            if p.is_dir() {
+                nodes.push(ContactTreeNode {
+                    name: p.file_name().unwrap_or_default().to_string_lossy().to_string(),
+                    path: p.to_string_lossy().to_string(),
+                    is_dir: true,
+                    children: build_contacts_tree(&p),
+                });
+            } else if p.extension().and_then(|e| e.to_str()) == Some("md") {
+                let name = std::fs::read_to_string(&p)
+                    .ok()
+                    .and_then(|c| parse_contact(&p.to_string_lossy(), &c).ok())
+                    .map(|c| c.frontmatter.display_name())
+                    .unwrap_or_else(|| p.file_stem().unwrap_or_default().to_string_lossy().to_string());
+                nodes.push(ContactTreeNode {
+                    name,
+                    path: p.to_string_lossy().to_string(),
+                    is_dir: false,
+                    children: Vec::new(),
+                });
+            }
+        }
+    }
+    // Folders first, then contacts; alphabetical within each group.
+    nodes.sort_by(|a, b| {
+        b.is_dir
+            .cmp(&a.is_dir)
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
+    nodes
+}
+
 // ── Module implementation ──────────────────────────────────────────────────
 
+use crate::filename::{sanitize_filename, unique_filename};
 use crate::module::{
     Capability, CommandDescriptor, DispatchResult, Module, ModuleEvent, ModuleInfo,
     ParamDescriptor, ParamKind, SettingField, VaultContext, Version,
@@ -219,22 +269,41 @@ impl ContactsModule {
         &self,
         given_name: String,
         family_name: String,
+        folder: Option<String>,
         ctx: &VaultContext<'_>,
     ) -> DispatchResult {
-        let dir = self.contacts_dir(ctx);
+        let dir = match folder {
+            Some(ref f) => {
+                let p = std::path::Path::new(f);
+                if !p.is_dir() { return Err(format!("'{}' is not a directory", f)); }
+                p.to_path_buf()
+            }
+            None => self.contacts_dir(ctx),
+        };
         let uid = Uuid::new_v4().to_string();
-        let path = dir.join(format!("{uid}.md"));
-        let now = Utc::now().to_rfc3339();
         let full = format!("{given_name} {family_name}").trim().to_string();
-        let fm = ContactFrontmatter {
+        let now = Utc::now().to_rfc3339();
+        let mut fm = ContactFrontmatter {
             uid: Some(uid.clone()),
-            full_name: Some(full),
+            full_name: if full.is_empty() { None } else { Some(full.clone()) },
             given_name: Some(given_name),
             family_name: Some(family_name),
             created: Some(now.clone()),
             modified: Some(now),
             ..Default::default()
         };
+        let display = fm.display_name();
+        let stem = sanitize_filename(if display == "Unnamed" { "Untitled" } else { &display });
+        let filename = unique_filename(&dir, &stem);
+        let path = dir.join(&filename);
+        // If the filename was deduplicated (e.g. "Untitled 1.md"), reflect it
+        // in full_name so the UI shows the correct display name.
+        let actual_stem = filename
+            .strip_suffix(".md")
+            .unwrap_or(&filename);
+        if actual_stem != stem {
+            fm.full_name = Some(actual_stem.to_string());
+        }
         let contact = Contact {
             path: path.to_string_lossy().to_string(),
             frontmatter: fm,
@@ -246,13 +315,61 @@ impl ContactsModule {
         serde_json::to_value(contact).map_err(|e| e.to_string())
     }
 
-    fn cmd_save(&self, contact: Contact, ctx: &VaultContext<'_>) -> DispatchResult {
+    fn cmd_save(&self, mut contact: Contact, ctx: &VaultContext<'_>) -> DispatchResult {
+        // Rename the file if the display name changed and the filename no longer matches.
+        let dir = self.contacts_dir(ctx);
+        let old_path = std::path::Path::new(&contact.path);
+        let current_stem = old_path
+            .file_stem()
+            .map(|s| s.to_string_lossy())
+            .unwrap_or_default();
+        let display = contact.frontmatter.display_name();
+        let desired_stem = sanitize_filename(if display == "Unnamed" { "Untitled" } else { &display });
+
+        if current_stem.as_ref() != desired_stem {
+            let candidate_path = dir.join(format!("{desired_stem}.md"));
+            if candidate_path != old_path {
+                // Check for name conflict: if a file with the desired name
+                // already exists and belongs to a *different* entity, reject
+                // the rename entirely (filename AND display name unchanged).
+                let conflict = if candidate_path.exists() {
+                    std::fs::read_to_string(&candidate_path)
+                        .ok()
+                        .and_then(|c| parse_contact(&candidate_path.to_string_lossy(), &c).ok())
+                        .and_then(|c| c.frontmatter.uid)
+                        .map_or(true, |existing_uid| {
+                            existing_uid != contact.frontmatter.uid.as_deref().unwrap_or("")
+                        })
+                } else {
+                    false
+                };
+
+                if conflict {
+                    // Revert the display name to match the current filename
+                    // stem so the UI reflects that the rename was rejected.
+                    contact.frontmatter.full_name = Some(current_stem.to_string());
+                } else {
+                    let old_path_str = contact.path.clone();
+                    if old_path.exists() {
+                        ctx.guard_rename(&old_path_str);
+                        std::fs::rename(&old_path_str, &candidate_path)
+                            .map_err(|e| format!("rename failed: {e}"))?;
+                        if let Some(index) = ctx.index() {
+                            index.rename(&old_path_str, &candidate_path.to_string_lossy())?;
+                        }
+                    }
+                    contact.path = candidate_path.to_string_lossy().to_string();
+                }
+            }
+        }
+
+        contact.frontmatter.modified = Some(Utc::now().to_rfc3339());
         let content = serialize_contact(&contact.frontmatter, &contact.body)?;
         std::fs::write(&contact.path, content).map_err(|e| e.to_string())?;
         if let Some(uid) = &contact.frontmatter.uid {
             ctx.events.emit(ModuleEvent::ContactSaved { uid: uid.clone() });
         }
-        Ok(Value::Null)
+        serde_json::to_value(contact).map_err(|e| e.to_string())
     }
 
     fn cmd_delete(&self, path: &str, ctx: &VaultContext<'_>) -> DispatchResult {
@@ -265,6 +382,99 @@ impl ContactsModule {
             ctx.events.emit(ModuleEvent::ContactDeleted { uid });
         }
         Ok(Value::Null)
+    }
+
+    fn cmd_create_folder(&self, name: String, ctx: &VaultContext<'_>) -> DispatchResult {
+        let safe_name = name.trim().replace(['/', '\\', '\0'], "_");
+        if safe_name.is_empty() {
+            return Err("folder name cannot be empty".into());
+        }
+        let target = self.contacts_dir(ctx).join(&safe_name);
+        if target.exists() {
+            return Err(format!("folder '{safe_name}' already exists"));
+        }
+        std::fs::create_dir_all(&target).map_err(|e| e.to_string())?;
+        serde_json::to_value(target.to_string_lossy().to_string()).map_err(|e| e.to_string())
+    }
+
+    fn cmd_tree(&self, ctx: &VaultContext<'_>) -> DispatchResult {
+        let tree = build_contacts_tree(&self.contacts_dir(ctx));
+        serde_json::to_value(tree).map_err(|e| e.to_string())
+    }
+
+    fn cmd_delete_folder(&self, path: &str, ctx: &VaultContext<'_>) -> DispatchResult {
+        let contacts_dir = self.contacts_dir(ctx);
+        let target = std::path::Path::new(path).canonicalize().map_err(|e| e.to_string())?;
+        let base = contacts_dir.canonicalize().map_err(|e| e.to_string())?;
+        if !target.starts_with(&base) || target == base {
+            return Err("path is outside the contacts directory".into());
+        }
+        std::fs::remove_dir_all(&target).map_err(|e| e.to_string())?;
+        Ok(Value::Null)
+    }
+
+    fn cmd_rename_folder(&self, path: &str, new_name: &str, ctx: &VaultContext<'_>) -> DispatchResult {
+        let safe_name = new_name.trim().replace(['/', '\\', '\0'], "_");
+        if safe_name.is_empty() { return Err("folder name cannot be empty".into()); }
+        let src = std::path::Path::new(path);
+        let new_path = src.parent().ok_or("cannot rename root folder")?.join(&safe_name);
+        if new_path == src { return Ok(Value::Null); }
+        if new_path.exists() { return Err(format!("'{}' already exists in this location", safe_name)); }
+        if !src.exists() { return Err("folder no longer exists".into()); }
+        let old_path_str = path.to_string();
+        ctx.guard_rename(&old_path_str);
+        std::fs::rename(src, &new_path).map_err(|e| format!("rename folder failed: {e}"))?;
+        if let Some(index) = ctx.index() { index.rename(&old_path_str, &new_path.to_string_lossy())?; }
+        serde_json::to_value(new_path.to_string_lossy().to_string()).map_err(|e| e.to_string())
+    }
+
+    fn cmd_move(&self, path: &str, folder: &str, ctx: &VaultContext<'_>) -> DispatchResult {
+        let contacts_dir = self.contacts_dir(ctx);
+        let src = std::path::Path::new(path);
+        let src_is_dir = src.is_dir();
+        let dest_dir = std::path::Path::new(folder);
+
+        let base = contacts_dir.canonicalize().map_err(|e| e.to_string())?;
+        let dest_canon = dest_dir.canonicalize()
+            .map_err(|_| format!("destination folder not found: '{}'", folder))?;
+        if !dest_canon.starts_with(&base) {
+            return Err("destination is outside the contacts directory".into());
+        }
+        if !dest_canon.is_dir() {
+            return Err(format!("'{}' is not a directory", folder));
+        }
+
+        // No-op: source is already in the destination folder.
+        let src_parent = src.parent().and_then(|p| p.canonicalize().ok());
+        if src_parent.as_ref() == Some(&dest_canon) {
+            return Ok(Value::Null);
+        }
+
+        let fname = src.file_name().ok_or("source has no filename")?;
+        let new_path = dest_canon.join(fname);
+        if new_path == src {
+            return Ok(Value::Null);
+        }
+        if new_path.exists() {
+            return Err(format!("'{}' already exists in the destination folder", fname.to_string_lossy()));
+        }
+        if !src.exists() {
+            return Err(format!("'{}' no longer exists; it may have been moved or deleted", path));
+        }
+
+        let old_path_str = path.to_string();
+        ctx.guard_rename(&old_path_str);
+        std::fs::rename(src, &new_path).map_err(|e| format!("move failed: {e}"))?;
+        if let Some(index) = ctx.index() {
+            index.rename(&old_path_str, &new_path.to_string_lossy())?;
+        }
+
+        if src_is_dir {
+            return serde_json::to_value(new_path.to_string_lossy().to_string()).map_err(|e| e.to_string());
+        }
+        let content = std::fs::read_to_string(&new_path).map_err(|e| e.to_string())?;
+        let contact = parse_contact(&new_path.to_string_lossy(), &content)?;
+        serde_json::to_value(contact).map_err(|e| e.to_string())
     }
 }
 
@@ -343,6 +553,29 @@ impl Module for ContactsModule {
                     description_key: "contacts-cmd-delete-desc".into(),
                     params: vec![path_param()],
                 },
+                CommandDescriptor {
+                    name: "create_folder".into(),
+                    label_key: "contacts-cmd-create-folder".into(),
+                    description_key: "contacts-cmd-create-folder-desc".into(),
+                    params: vec![ParamDescriptor {
+                        name: "name".into(),
+                        kind: ParamKind::String,
+                        required: true,
+                        description_key: "contacts-param-folder-name".into(),
+                    }],
+                },
+                CommandDescriptor {
+                    name: "delete_folder".into(),
+                    label_key: "contacts-cmd-delete-folder".into(),
+                    description_key: "contacts-cmd-delete-folder-desc".into(),
+                    params: vec![path_param()],
+                },
+                CommandDescriptor {
+                    name: "tree".into(),
+                    label_key: "contacts-cmd-tree".into(),
+                    description_key: "contacts-cmd-tree-desc".into(),
+                    params: vec![],
+                },
             ]
         })
     }
@@ -359,7 +592,8 @@ impl Module for ContactsModule {
             "create" => {
                 let given = args["given_name"].as_str().unwrap_or("").to_string();
                 let family = args["family_name"].as_str().unwrap_or("").to_string();
-                self.cmd_create(given, family, ctx)
+                let folder = args["folder"].as_str().map(|s| s.to_string());
+                self.cmd_create(given, family, folder, ctx)
             }
             "save" => {
                 let contact: Contact = serde_json::from_value(args["contact"].clone())
@@ -369,6 +603,25 @@ impl Module for ContactsModule {
             "delete" => {
                 let path = args["path"].as_str().ok_or("missing required param: path")?;
                 self.cmd_delete(path, ctx)
+            }
+            "create_folder" => {
+                let name = args["name"].as_str().unwrap_or("New folder").to_string();
+                self.cmd_create_folder(name, ctx)
+            }
+            "delete_folder" => {
+                let path = args["path"].as_str().ok_or("missing required param: path")?;
+                self.cmd_delete_folder(path, ctx)
+            }
+            "tree" => self.cmd_tree(ctx),
+            "move" => {
+                let path = args["path"].as_str().ok_or("missing required param: path")?;
+                let folder = args["folder"].as_str().ok_or("missing required param: folder")?;
+                self.cmd_move(path, folder, ctx)
+            }
+            "rename_folder" => {
+                let path = args["path"].as_str().ok_or("missing required param: path")?;
+                let name = args["name"].as_str().ok_or("missing required param: name")?;
+                self.cmd_rename_folder(path, name, ctx)
             }
             _ => Err(format!("Unknown command: {command}")),
         }

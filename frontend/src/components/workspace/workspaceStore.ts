@@ -393,3 +393,29 @@ export function updateNoteTabTitle(notePath: string, title: string) {
     }
   }
 }
+
+/** Update the notePath in all tabs that reference oldPath (called after a rename-on-save). */
+export function updateNoteTabPath(oldPath: string, newPath: string) {
+  for (const [pid, panel] of Object.entries(panels)) {
+    const idx = panel.tabs.findIndex(
+      t => t.content.type === 'note-detail' &&
+           (t.content as { notePath: string }).notePath === oldPath,
+    );
+    if (idx !== -1) {
+      setPanels(pid, 'tabs', idx, 'content', { type: 'note-detail', notePath: newPath });
+    }
+  }
+}
+
+/** Update the contactPath in all tabs that reference oldPath (called after a rename-on-save). */
+export function updateContactTabPath(oldPath: string, newPath: string) {
+  for (const [pid, panel] of Object.entries(panels)) {
+    const idx = panel.tabs.findIndex(
+      t => t.content.type === 'contact-detail' &&
+           (t.content as { contactPath: string }).contactPath === oldPath,
+    );
+    if (idx !== -1) {
+      setPanels(pid, 'tabs', idx, 'content', { type: 'contact-detail', contactPath: newPath });
+    }
+  }
+}

@@ -68,9 +68,12 @@ export default function NotesList() {
   const [collapsed, setCollapsed] = createSignal<Set<string>>(loadCollapsed());
   const [ctxMenu, setCtxMenu] = createSignal<{ x: number; y: number; target: CtxTarget } | null>(null);
   const [confirmState, setConfirmState] = createSignal<{ message: string; onConfirm: () => void } | null>(null);
+  const [dragOverFolder, setDragOverFolder] = createSignal<string | null>(null);
+  const [moving, setMoving] = createSignal(false);
 
   const [notes, { refetch: refetchNotes }] = createResource<NoteMeta[]>(() => invoke<NoteMeta[]>('list_notes'));
   const [tree, { refetch: refetchTree }] = createResource<TreeNode[]>(() => invoke<TreeNode[]>('list_notes_tree'));
+  const [rootDir] = createResource(() => invoke<string>('get_notes_dir'));
 
   const refetch = async () => { await Promise.all([refetchNotes(), refetchTree()]); };
 
@@ -87,11 +90,11 @@ export default function NotesList() {
     });
   }
 
-  async function createNote() {
+  async function createNote(folder?: string) {
     if (creating()) return;
     setCreating(true);
     try {
-      const note = await invoke<Note>('create_note', { title: '' });
+      const note = await invoke<Note>('create_note', { title: t('notes-untitled'), folder: folder ?? null });
       await refetch();
       const title = note.frontmatter.title ?? t('notes-untitled');
       openNotePermanent(note.path, title);
@@ -128,6 +131,18 @@ export default function NotesList() {
     });
   }
 
+  async function renameNote(path: string, currentTitle: string) {
+    setCtxMenu(null);
+    const name = window.prompt(t('notes-ctx-rename-prompt'), currentTitle);
+    if (!name?.trim() || name.trim() === currentTitle) return;
+    try {
+      const note = await invoke<Note>('read_note', { path });
+      note.frontmatter.title = name.trim();
+      await invoke('save_note', { note });
+      await refetch();
+    } catch (e) { window.alert(String(e)); }
+  }
+
   function deleteFolder(path: string) {
     setCtxMenu(null);
     setConfirmState({
@@ -142,6 +157,65 @@ export default function NotesList() {
         }
       },
     });
+  }
+
+  async function renameFolder(path: string, currentName: string) {
+    setCtxMenu(null);
+    const name = window.prompt(t('notes-ctx-rename-prompt'), currentName);
+    if (!name?.trim() || name.trim() === currentName) return;
+    try {
+      await invoke('rename_note_folder', { path, name: name.trim() });
+      await refetch();
+    } catch (e) { window.alert(String(e)); }
+  }
+
+  async function moveNote(notePath: string, destFolder: string) {
+    if (moving()) return;
+    // Skip if dropping into the same parent folder.
+    const parentPath = notePath.split('/').slice(0, -1).join('/') || rootDir() || '';
+    if (destFolder === parentPath) return;
+    setMoving(true);
+    try {
+      await invoke('move_note', { path: notePath, folder: destFolder });
+      await refetch();
+    } catch (e) {
+      window.alert(String(e));
+    } finally {
+      setMoving(false);
+    }
+  }
+
+  // ── Drag-and-drop ─────────────────────────────────────────────────────
+  function onDragStartNote(e: DragEvent, path: string) {
+    if (moving()) { e.preventDefault(); return; }
+    e.dataTransfer!.setData('text/plain', path);
+    e.dataTransfer!.effectAllowed = 'move';
+  }
+  function onDragStartFolder(e: DragEvent, path: string) {
+    if (moving()) { e.preventDefault(); return; }
+    e.dataTransfer!.setData('text/plain', path);
+    e.dataTransfer!.effectAllowed = 'move';
+  }
+  function onDragOverFolder(e: DragEvent, folderPath: string) {
+    e.preventDefault();
+    if (!moving()) { e.dataTransfer!.dropEffect = 'move'; setDragOverFolder(folderPath); }
+  }
+  function onDragLeaveFolder() { setDragOverFolder(null); }
+  function onDropFolder(e: DragEvent, folderPath: string) {
+    e.preventDefault();
+    setDragOverFolder(null);
+    if (moving()) return;
+    const sourcePath = e.dataTransfer!.getData('text/plain');
+    if (sourcePath && folderPath) void moveNote(sourcePath, folderPath);
+  }
+  function onDropRoot(e: DragEvent) {
+    e.preventDefault();
+    setDragOverFolder(null);
+    if (moving()) return;
+    const r = rootDir();
+    if (!r) return;
+    const sourcePath = e.dataTransfer!.getData('text/plain');
+    if (sourcePath) void moveNote(sourcePath, r);
   }
 
   function openCtxMenu(e: MouseEvent, target: CtxTarget) {
@@ -159,11 +233,14 @@ export default function NotesList() {
         { label: t('notes-ctx-new-folder'), action: createFolder },
       ];
       case 'folder': return [
+        { label: t('notes-ctx-new-note'), action: () => createNote((ctx.target as { kind: 'folder'; path: string }).path) },
+        { label: t('notes-ctx-rename'), action: () => renameFolder((ctx.target as { kind: 'folder'; path: string }).path, (ctx.target as { kind: 'folder'; path: string; name?: string }).name || '') },
         { label: t('notes-ctx-delete'), action: () => deleteFolder((ctx.target as { kind: 'folder'; path: string }).path), danger: true },
       ];
       case 'note': return [
         { label: t('notes-ctx-open'), action: () => { const n = ctx.target as { kind: 'note'; path: string; title: string }; navigateToNote(n.path, n.title); } },
         { label: t('notes-ctx-open-new-tab'), action: () => { const n = ctx.target as { kind: 'note'; path: string; title: string }; openNotePermanent(n.path, n.title); } },
+        { label: t('notes-ctx-rename'), action: () => renameNote((ctx.target as { kind: 'note'; path: string; title: string }).path, (ctx.target as { kind: 'note'; path: string; title: string }).title) },
         { label: t('notes-ctx-delete'), action: () => deleteNote((ctx.target as { kind: 'note'; path: string; title: string }).path), danger: true },
       ];
     }
@@ -186,6 +263,8 @@ export default function NotesList() {
           <div
             class="note-tree-item"
             style={{ 'padding-left': pad() }}
+            draggable="true"
+            onDragStart={e => onDragStartNote(e, p.node.path)}
             onClick={e => openNote(p.node.path, p.node.name, e.ctrlKey || e.metaKey)}
             onContextMenu={e => openCtxMenu(e, { kind: 'note', path: p.node.path, title: p.node.name })}
           >
@@ -198,9 +277,16 @@ export default function NotesList() {
       >
         <div
           class="note-tree-folder"
+          classList={{ 'drag-over': dragOverFolder() === p.node.path }}
           style={{ 'padding-left': pad() }}
+          draggable="true"
+          onDragStart={e => onDragStartFolder(e, p.node.path)}
           onClick={() => toggleDir(p.node.path)}
           onContextMenu={e => openCtxMenu(e, { kind: 'folder', path: p.node.path })}
+          onDragOver={e => onDragOverFolder(e, p.node.path)}
+          onDragEnter={e => { e.preventDefault(); onDragOverFolder(e, p.node.path); }}
+          onDragLeave={e => { e.preventDefault(); onDragLeaveFolder(); }}
+          onDrop={e => onDropFolder(e, p.node.path)}
         >
           <span style={{ 'font-size': '9px', color: 'var(--muted)', width: '10px', 'flex-shrink': '0' }}>
             {collapsed().has(p.node.path) ? '▸' : '▾'}
@@ -258,7 +344,13 @@ export default function NotesList() {
       </div>
 
       {/* Body: tree when browsing, flat results when searching */}
-      <div style={{ flex: '1 1 0', 'overflow-y': 'auto', padding: '4px 0' }}>
+      <div
+        style={{ flex: '1 1 0', 'overflow-y': 'auto', padding: '4px 0' }}
+        classList={{ 'drag-over': dragOverFolder() === (rootDir() ?? '__root__') }}
+        onDragOver={e => { e.preventDefault(); if (!moving()) { e.dataTransfer!.dropEffect = 'move'; const r = rootDir(); if (r) setDragOverFolder(r); } }}
+        onDragLeave={e => { e.preventDefault(); onDragLeaveFolder(); }}
+        onDrop={e => { const r = rootDir(); if (r) onDropRoot(e); }}
+      >
         <Show when={query()} fallback={
           <Show
             when={!tree.loading}

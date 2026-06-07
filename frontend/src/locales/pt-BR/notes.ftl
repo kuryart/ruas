@@ -15,9 +15,11 @@ notes-ctx-new-folder = Nova pasta
 notes-ctx-open = Abrir
 notes-ctx-open-new-tab = Abrir em nova aba
 notes-ctx-delete = Excluir
+notes-ctx-rename = Renomear
 notes-ctx-delete-folder-confirm = Excluir esta pasta e todo o seu conteúdo?
 notes-ctx-folder-name-prompt = Nome da pasta:
 notes-ctx-folder-default-name = Nova pasta
+notes-ctx-rename-prompt = Novo nome:
 
 notes-search-placeholder = Buscar notas…
 notes-loading = Carregando…

@@ -1,6 +1,7 @@
 # Contacts module
 
 contacts-header = Contacts
+contacts-untitled = Untitled
 contacts-new-btn-title = New contact
 
 contacts-search-placeholder = Search contacts…
@@ -64,3 +65,15 @@ contact-status-saving = ◌ Saving…
 contact-status-error = ● Error saving
 
 contacts-history-create = Create contact
+
+# ── Context menu ──────────────────────────────────────────────────────────
+
+contacts-ctx-new-contact = New contact
+contacts-ctx-new-folder = New folder
+contacts-ctx-delete = Delete
+contacts-ctx-rename = Rename
+contacts-ctx-delete-confirm = Delete this contact?
+contacts-ctx-delete-folder-confirm = Delete this folder and all its contents?
+contacts-ctx-folder-name-prompt = Folder name:
+contacts-ctx-folder-default-name = New folder
+contacts-ctx-rename-prompt = New name:

@@ -85,7 +85,7 @@ To keep the file system clean and the app performant:
 
 - Integration with cardDAV
 - Tasks will be stored as Markdown notes containing metadata in the frontmatter
-- To add a task, press `Ctrl+P` to open the command palette, select "Add note", and type in natural language. The system will parse wildcards and keywords, similarly to Todoist or Vikunja. Example: "do something tomorrow +project \*tag1 \*tag2". The system generates a raw entry: `- [ ] do something tomorrow +project *tag1 *tag2`, but renders a clean checkbox, the text "do something tomorrow", and specific badges for "07/02", "tag1", and "tag2".
+- To add a task, press `Ctrl+P` to open the command palette, select "Add task", and type in natural language. The system will parse wildcards and keywords, similarly to Todoist or Vikunja. Example: "do something tomorrow +project #tag1 #tag2". The system generates a raw entry: `- [ ] do something tomorrow +project *tag1 *tag2`, but renders a clean checkbox, the text "do something tomorrow", and specific badges for "07/02", "tag1", and "tag2".
 - The system must be multilingual, recognizing terms across multiple languages.
 
 ## Calendar
@@ -98,6 +98,11 @@ To keep the file system clean and the app performant:
 ## Notes
 
 - Knowledge management workflow similar to Obsidian, Notion, AnyType, and Logseq.
+
+## Finances
+
+- A module for finances. It will have accounts (in and out) that can be linked to a contact, and transactions (in an out). Both account and transaction are markdown files. The amount of money in account is stored in the frontmatter. The amount of money being transfered by a transaction is stored in the frontmatter. 
+- The system need a way to validate transactions and to deal with external changes in the file, or with changes made in the raw mode.
 
 ## Projects
 

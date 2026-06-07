@@ -43,8 +43,8 @@ pub fn sanitize_filename(title: &str) -> String {
     }
 }
 
-/// Return a unique `"{stem}.md"` filename inside `dir`, appending ` (1)`,
-/// ` (2)`, … until a non-existing name is found.
+/// Return a unique `"{stem}.md"` filename inside `dir`, appending ` 1`,
+/// ` 2`, … until a non-existing name is found.
 ///
 /// The check is case-insensitive on case-insensitive file systems only if the
 /// OS reports the conflict via `Path::exists()`. On case-sensitive systems the
@@ -56,7 +56,7 @@ pub fn unique_filename(dir: &Path, stem: &str) -> String {
     }
     let mut n: u32 = 1;
     loop {
-        let candidate = format!("{stem} ({n}).md");
+        let candidate = format!("{stem} {n}.md");
         if !dir.join(&candidate).exists() {
             return candidate;
         }
@@ -138,22 +138,22 @@ mod tests {
     fn unique_appends_counter_on_conflict() {
         let dir = TempDir::new().unwrap();
         fs::write(dir.path().join("Nota.md"), "").unwrap();
-        assert_eq!(unique_filename(dir.path(), "Nota"), "Nota (1).md");
+        assert_eq!(unique_filename(dir.path(), "Nota"), "Nota 1.md");
     }
 
     #[test]
     fn unique_increments_counter_until_free() {
         let dir = TempDir::new().unwrap();
         fs::write(dir.path().join("Nota.md"), "").unwrap();
-        fs::write(dir.path().join("Nota (1).md"), "").unwrap();
-        fs::write(dir.path().join("Nota (2).md"), "").unwrap();
-        assert_eq!(unique_filename(dir.path(), "Nota"), "Nota (3).md");
+        fs::write(dir.path().join("Nota 1.md"), "").unwrap();
+        fs::write(dir.path().join("Nota 2.md"), "").unwrap();
+        assert_eq!(unique_filename(dir.path(), "Nota"), "Nota 3.md");
     }
 
     #[test]
     fn unique_untitled_deduplicates() {
         let dir = TempDir::new().unwrap();
         fs::write(dir.path().join("Untitled.md"), "").unwrap();
-        assert_eq!(unique_filename(dir.path(), "Untitled"), "Untitled (1).md");
+        assert_eq!(unique_filename(dir.path(), "Untitled"), "Untitled 1.md");
     }
 }

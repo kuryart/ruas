@@ -5,7 +5,10 @@ import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirro
 import { markdown } from '@codemirror/lang-markdown';
 import { GFM, Subscript, Superscript } from '@lezer/markdown';
 import { catppuccinHighlight, catppuccinTheme } from './catppuccinTheme';
-import { tableInteraction } from './editor/tableInteraction';
+// ── Import table editor ──────────────────────────────────────────────────
+import { tableInteraction, tableRenderer } from './editor/tableInteraction';
+console.log('EditorPane loaded — tableInteraction:', tableInteraction);
+console.log('EditorPane loaded — tableRenderer:', tableRenderer);
 import { autoPairs } from './editor/autoPairs';
 import { blockIdConceal } from './editor/blockIdConceal';
 import { latex } from './editor/latexRenderer';
@@ -14,6 +17,7 @@ import { folding } from './editor/folding';
 import { slashCommands } from './editor/slashCommands';
 import { codeLanguages } from './editor/languageSupport';
 import { codeBlockBg } from './editor/codeBlockBg';
+import { linkRenderer } from '../notes/editor/wikiLink';
 import { vim } from '@replit/codemirror-vim';
 import { vimMode } from '../../stores/prefsStore';
 
@@ -76,6 +80,7 @@ export default function EditorPane(props: {
     markdown({ extensions: [GFM, Superscript, Subscript], codeLanguages }),
     autoPairs(),
     history(),
+    ...(mode === 'edit' ? [tableInteraction(), tableRenderer(), linkRenderer()] : []),
     folding(),
     keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
     EditorView.lineWrapping,
@@ -86,7 +91,7 @@ export default function EditorPane(props: {
     // Block-id markers are internal — conceal them in every mode, raw included.
     blockIdConceal(),
     ...(mode === 'raw'  ? [lineNumbers()]                                                      : []),
-    ...(mode === 'edit' ? [tableInteraction(), slashCommands(), latex(), mermaidDiagram(),
+    ...(mode === 'edit' ? [slashCommands(), latex(), mermaidDiagram(),
                            ...(props.extraExtensions ?? [])]                                   : []),
   ];
 

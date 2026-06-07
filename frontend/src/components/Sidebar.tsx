@@ -43,6 +43,12 @@ const icons: Record<string, JSX.Element> = {
       <polyline points="2,4 12,13 22,4"/>
     </svg>
   ),
+  finances: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="12" y1="1" x2="12" y2="23"/>
+      <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+    </svg>
+  ),
   projects: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
       <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
@@ -50,7 +56,7 @@ const icons: Record<string, JSX.Element> = {
   ),
 };
 
-const MODULE_IDS = ['contacts', 'agenda', 'calendar', 'notes', 'email', 'projects'] as const;
+const MODULE_IDS = ['contacts', 'agenda', 'calendar', 'notes', 'email', 'finances', 'projects'] as const;
 type ModuleId = (typeof MODULE_IDS)[number];
 
 // Modules with a dedicated left-drawer browser toggle the drawer; the rest open

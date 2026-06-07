@@ -16,7 +16,7 @@ Regras aplicadas:
 - Caracteres proibidos (`/ \ : * ? " < > |`) e caracteres de controle → `_`
 - Espaços e pontos no início/fim são removidos (pontos iniciais criariam arquivos ocultos no Unix)
 - String vazia após sanitização → `"Untitled"`
-- Comprimento máximo: 200 caracteres (deixa margem para o sufixo ` (N)` e a extensão `.md`)
+- Comprimento máximo: 200 caracteres (deixa margem para o sufixo ` N` e a extensão `.md`)
 
 Exemplos:
 
@@ -30,7 +30,7 @@ Exemplos:
 
 ### `unique_filename(dir: &Path, stem: &str) -> String`
 
-Retorna `"{stem}.md"` se não existe no diretório. Caso contrário, tenta `"{stem} (1).md"`, `"{stem} (2).md"` etc. até encontrar um nome livre.
+Retorna `"{stem}.md"` se não existe no diretório. Caso contrário, tenta `"{stem} 1.md"`, `"{stem} 2.md"` etc. até encontrar um nome livre.
 
 A verificação usa `Path::exists()`, que respeita a sensibilidade a maiúsculas do sistema de arquivos do host (case-insensitive em macOS/Windows, case-sensitive em Linux).
 
@@ -63,22 +63,57 @@ O `index.rename(old, new)` é chamado após `fs::rename`, atualizando `files`, `
 ```
 1. Frontend: save_note({ path, frontmatter: { title: "Novo Título" }, body })
 2. Core cmd_save:
-   a. Calcula new_stem = sanitize_filename("Novo Título")
-   b. Compara com current_stem = Path::new(path).file_stem()
-   c. Se diferentes:
+   a. Calcula desired_stem = sanitize_filename(title.unwrap_or("Untitled"))
+   b. Compara com current_stem = Path::new(note.path).file_stem()
+   c. Se diferentes, calcula candidate_path = dir.join(desired_stem + ".md")
+      - Lê o arquivo em candidate_path (se existir) para verificar o UID
+      - Se o UID for diferente → **conflito**: NÃO renomeia, mantém o path antigo
+      - Se o UID for igual (mesma entidade já renomeada) → prossegue
+      - Se candidate_path não existe → prossegue
       - ctx.guard_rename(old_path)
-      - index.rename(old_path, new_path)  ← transaction SQLite
-      - fs::rename(old_path, new_path)    ← operação em disco
-   d. Escreve conteúdo no new_path
-   e. Retorna new_path ao Tauri command
-3. Tauri save_note: retorna Option<String> (Some(new_path) ou None)
-4. Frontend: se Some(new_path), chama updateNoteTabPath(old, new)
+      - fs::rename(old_path, candidate_path)
+      - index.rename(old_path, candidate_path)
+   d. Escreve conteúdo no note.path (atualizado se houve rename, ou mantido se houve conflito)
+   e. Emite ModuleEvent::NoteSaved { uid }
+   f. Retorna o Note completo (com path potencialmente atualizado)
+3. Frontend: captura o Note retornado; se result.path !== oldPath:
+   - updateNoteTabPath(oldPath, result.path)
+   - setActivePath(result.path) (NoteDetail)
 ```
+
 
 ---
 
 ## Compatibilidade com arquivos legados
 
-Arquivos nomeados com UUID continuam funcionando. O SQLite indexa pelo UID no frontmatter independente do nome do arquivo. O comando de migração (Milestone 5) renomeia arquivos legados em lote, mas é opcional.
+Arquivos nomeados com UUID continuam funcionando. O SQLite indexa pelo UID no frontmatter independente do nome do arquivo. A regra de rename na `cmd_save` é universal: se o stem atual não corresponde ao título sanitizado (seja UUID ou título desatualizado), o arquivo é renomeado — então arquivos legados com nome UUID são automaticamente renomeados na primeira edição.
 
-A regra de rename na `cmd_save` é universal: se o stem atual não corresponde ao título sanitizado (seja UUID ou título desatualizado), o arquivo é renomeado.
+## Criação de arquivos
+
+`cmd_create` usa `sanitize_filename` + `unique_filename` para gerar o nome do arquivo no momento da criação:
+
+- Título `"My Note"` → `My Note.md`
+- Título `""` → `Untitled.md` (backend fallback; frontend envia título i18n)
+- Título `"A/B"` → `A_B.md`
+- Título `"Dup"` (já existe `Dup.md`) → `Dup 1.md`
+- UID sempre presente no frontmatter como identificador estável para links `ruas://`
+
+## Timing de save do título
+
+O título/nome **não** é salvo automaticamente enquanto o usuário digita. O save dispara apenas:
+- **Enter** — faz blur no campo de título, que dispara o save
+- **Blur** — quando o campo de título perde o foco
+- **Ctrl+S** — atalho manual (salva tudo, incluindo título)
+
+Isso evita renomear o arquivo a cada keystroke e permite que o backend detecte
+conflitos de nome de forma determinística.
+
+## Resolução de conflitos
+
+Ao renomear (via `cmd_save`), se o nome desejado já existe no diretório e pertence
+a uma entidade **diferente** (UID diferente), o rename é **rejeitado** — o arquivo
+mantém o nome antigo. O título no frontmatter é atualizado normalmente.
+
+`unique_filename` é usado apenas na **criação** (`cmd_create`), nunca no `cmd_save`.
+Isso garante que o usuário não tenha o arquivo renomeado com sufixos automáticos
+inesperados.

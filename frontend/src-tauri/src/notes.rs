@@ -48,10 +48,11 @@ pub fn search_notes(
 #[tauri::command]
 pub fn create_note(
     title: String,
+    folder: Option<String>,
     state: tauri::State<VaultState>,
     registry: tauri::State<RegistryState>,
 ) -> Result<Note, String> {
-    let result = dispatch(&state, &registry, "create", serde_json::json!({ "title": title }))?;
+    let result = dispatch(&state, &registry, "create", serde_json::json!({ "title": title, "folder": folder }))?;
     serde_json::from_value(result).map_err(|e| e.to_string())
 }
 
@@ -122,4 +123,32 @@ pub fn delete_folder(
 ) -> Result<(), String> {
     dispatch(&state, &registry, "delete_folder", serde_json::json!({ "path": path }))?;
     Ok(())
+}
+
+#[tauri::command]
+pub fn move_note(
+    path: String,
+    folder: String,
+    state: tauri::State<VaultState>,
+    registry: tauri::State<RegistryState>,
+) -> Result<(), String> {
+    dispatch(&state, &registry, "move", serde_json::json!({ "path": path, "folder": folder })).map(|_| ())
+}
+
+#[tauri::command]
+pub fn get_notes_dir(
+    state: tauri::State<VaultState>,
+) -> Result<String, String> {
+    Ok(crate::vault::get_vault_path(&state)?.join("notes").to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub fn rename_note_folder(
+    path: String,
+    name: String,
+    state: tauri::State<VaultState>,
+    registry: tauri::State<RegistryState>,
+) -> Result<String, String> {
+    let result = dispatch(&state, &registry, "rename_folder", serde_json::json!({ "path": path, "name": name }))?;
+    serde_json::from_value(result).map_err(|e| e.to_string())
 }
