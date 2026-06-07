@@ -44,6 +44,7 @@ notes-backlinks-title = Backlinks
 notes-backlinks-empty = No backlinks
 
 # Frontmatter editor
+notes-fm-header = Properties
 notes-fm-tags = Tags
 notes-fm-add-tag = add tag…
 notes-fm-remove-tag = Remove tag

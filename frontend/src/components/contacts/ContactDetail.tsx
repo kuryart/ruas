@@ -452,11 +452,32 @@ export default function ContactDetail(props: { path: string; panelId: string }) 
 
 			<Show when={loaded()}>
 
+				{/* ── Toolbar (fixed top, mirrors notes toolbar) ──────────────── */}
+				<div class="note-toolbar" style={{
+					display: 'flex', 'align-items': 'center', gap: '8px',
+					padding: '6px 14px', 'flex-shrink': '0',
+					'border-bottom': '1px solid var(--surface0)',
+					background: 'var(--mantle)',
+				}}>
+					<input
+						class="note-title-input"
+						type="text"
+						value={fm['fn'] ?? ''}
+						placeholder={t('contact-detail-name-placeholder')}
+						onInput={e => setField('fn', (e.target as HTMLInputElement).value)}
+						onBlur={() => { if (saveStatus() === 'unsaved') { clearTimeout(saveTimer); scheduleSave(); } }}
+						onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).blur(); } }}
+					/>
+					<div style={{ display: 'flex', gap: '2px', 'flex-shrink': '0', background: 'var(--surface0)', 'border-radius': '6px', padding: '2px' }}>
+						<MarkdownModeBar mode={bodyMode()} onModeChange={changeBodyMode} />
+					</div>
+				</div>
+
 				{/* ── Scrollable document body ───────────────────────────────── */}
 				<div style={{ flex: '1 1 0', 'overflow-y': 'auto' }}>
 
-					{/* ── Title block ─────────────────────────────────────────── */}
-					<div style={{ padding: '28px 24px 16px', 'border-bottom': '1px solid var(--surface0)' }}>
+					{/* ── Title block (avatar + title/org) ────────────────────── */}
+					<div style={{ padding: '20px 24px 16px', 'border-bottom': '1px solid var(--surface0)' }}>
 						<div style={{ display: 'flex', gap: '16px', 'align-items': 'flex-start' }}>
 							{/* Avatar */}
 							{(() => {
@@ -474,18 +495,8 @@ export default function ContactDetail(props: { path: string; panelId: string }) 
 								);
 							})()}
 							<div style={{ flex: '1', 'min-width': '0' }}>
-								{/* Name */}
-								<input
-									class="contact-name"
-									type="text"
-									value={fm['fn'] ?? ''}
-									placeholder={t('contact-detail-name-placeholder')}
-									onInput={e => setField('fn', (e.target as HTMLInputElement).value)}
-									onBlur={() => { if (saveStatus() === 'unsaved') { clearTimeout(saveTimer); scheduleSave(); } }}
-									onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).blur(); } }}
-								/>
 								{/* Cargo · Empresa */}
-								<div style={{ display: 'flex', gap: '6px', 'margin-top': '6px', 'align-items': 'center' }}>
+								<div style={{ display: 'flex', gap: '6px', 'align-items': 'center' }}>
 									<input
 										class="contact-subfield"
 										style={{ flex: '0 1 auto' }}
@@ -505,9 +516,6 @@ export default function ContactDetail(props: { path: string; panelId: string }) 
 										placeholder={t('contact-detail-org-placeholder')}
 										onInput={e => setField('org', (e.target as HTMLInputElement).value)}
 									/>
-
-									<MarkdownModeBar mode={bodyMode()} onModeChange={changeBodyMode} />
-
 								</div>
 							</div>
 						</div>
