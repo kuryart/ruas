@@ -1,0 +1,42 @@
+# ── Rust build output ──
+target/
+gen/schemas
+
+# ── JS build output ──
+dist/
+dist-ssr/
+demo/
+.astro/
+
+# ── Dependencies ──
+node_modules/
+
+# ── Logs ──
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# ── Environment ──
+.env
+.env.production
+*.local
+
+# ── Coverage ──
+coverage/
+
+# ── Vale (prose linter) ──
+.vale/
+
+# ── OS / editor ──
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

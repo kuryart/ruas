@@ -1,0 +1,56 @@
+name: Demo (ruas-cmtables)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'packages/ruas-cmtables/**'
+
+jobs:
+  build:
+    name: Build demo
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: "10"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: packages/ruas-cmtables/pnpm-lock.yaml
+
+      - name: Install dependencies
+        working-directory: packages/ruas-cmtables
+        run: pnpm install --frozen-lockfile
+
+      - name: Build demo
+        working-directory: packages/ruas-cmtables
+        env:
+          BASE_PATH: "/${{ github.event.repository.name }}"
+        run: pnpm build:demo
+
+      - name: Upload pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: packages/ruas-cmtables/demo/
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    permissions:
+      pages: write
+      id-token: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy
+        uses: actions/deploy-pages@v4
