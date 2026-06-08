@@ -39,7 +39,7 @@
 		"@tauri-apps/api": "^2.6.0",
 		"@tauri-apps/cli": "^2.6.2",
 		"astro": "^5.10.2",
-		"codemirror-markdown-tables": "link:../../ruas-cmtables",
+		"codemirror-markdown-tables": "link:../packages/ruas-cmtables",
 		"fuse.js": "^7.4.0",
 		"js-yaml": "^4.2.0",
 		"katex": "^0.17.0",

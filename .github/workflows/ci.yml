@@ -12,7 +12,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # ── Rust: unit + integration tests ──────────────────────────────────────────
+  # ── Rust: unit tests + clippy ─────────────────────────────────────────────
   rust:
     name: Rust tests & lint
     runs-on: ubuntu-latest
@@ -31,7 +31,7 @@ jobs:
       - name: Check ruas_api compiles
         run: cargo check -p ruas_api
 
-      # ruas_core has unit + integration tests (92 tests as of this writing).
+      # ruas_core has unit + integration tests.
       - name: Test ruas_core
         run: cargo test -p ruas_core
 
@@ -43,13 +43,10 @@ jobs:
       - name: Clippy ruas_api
         run: cargo clippy -p ruas_api
 
-  # ── Frontend: Vitest unit tests ──────────────────────────────────────────────
-  frontend:
-    name: Frontend tests
+  # ── JavaScript: ruas-cmtables + frontend (same runner, shared fs) ─────────
+  js:
+    name: JS lint, build & test
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: frontend
     steps:
       - uses: actions/checkout@v4
 
@@ -63,20 +60,40 @@ jobs:
         with:
           node-version: "22"
           cache: pnpm
-          cache-dependency-path: frontend/pnpm-lock.yaml
+          cache-dependency-path: packages/ruas-cmtables/pnpm-lock.yaml
 
-      - name: Install dependencies
+      # ── ruas-cmtables ──
+      - name: Install ruas-cmtables deps
+        working-directory: packages/ruas-cmtables
         run: pnpm install --frozen-lockfile
 
-      - name: Run Vitest
+      - name: Lint ruas-cmtables
+        working-directory: packages/ruas-cmtables
+        run: pnpm lint:ci
+
+      - name: Build ruas-cmtables (produces dist/)
+        working-directory: packages/ruas-cmtables
+        run: pnpm build
+
+      - name: Test ruas-cmtables
+        working-directory: packages/ruas-cmtables
         run: pnpm test
 
-  # ── E2E: Playwright against Astro dev server (no Tauri required) ─────────────
+      # ── Frontend (depends on ruas-cmtables dist/) ──
+      - name: Install frontend deps
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Test frontend (Vitest)
+        working-directory: frontend
+        run: pnpm test
+
+  # ── E2E: Playwright against Astro dev server (no Tauri required) ──────────
   # Tests mock all API calls via page.route() — no Rust binary needed.
   e2e:
     name: E2E (Playwright)
     runs-on: ubuntu-latest
-    needs: [rust, frontend]
+    needs: [rust, js]
     defaults:
       run:
         working-directory: frontend

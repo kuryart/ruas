@@ -6,9 +6,25 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Ruas** (Rapid Universal Annotation System / Rust + Astro) is a cross-platform, privacy-first, self-hosted productivity app covering Contacts, Agenda, Calendar, Projects, Notes, Finances, and Email — all oriented around Markdown.
 
+## Repository structure (monorepo)
+
+```
+.
+├── Cargo.toml              ← Rust workspace root
+├── core/                   ← ruas_core: shared business logic
+├── api/                    ← ruas_api: Actix-web HTTP API
+├── frontend/               ← Astro + SolidJS UI (pnpm)
+│   ├── src                 ← Frontend components, etc.
+│   └── src-tauri/          ← Tauri shell crate
+├── packages/
+│   └── ruas-cmtables/      ← codemirror-markdown-tables (fork, pnpm)
+├── docs/                   ← Project documentation
+└── .github/workflows/      ← Unified CI (Rust + JS + E2E)
+```
+
 ## Commands
 
-All Rust commands run from the repo root unless noted. The frontend uses **pnpm** and commands run from `frontend/`.
+All commands run from the repo root unless noted.
 
 ### Rust (workspace)
 ```bash
@@ -31,9 +47,19 @@ pnpm test           # Vitest unit tests
 pnpm test:e2e       # Playwright E2E tests
 ```
 
+### ruas-cmtables (CodeMirror Markdown tables extension)
+```bash
+cd packages/ruas-cmtables
+pnpm dev            # dev server (Vite)
+pnpm build          # build library dist/
+pnpm build:demo     # build demo page
+pnpm test           # Vitest tests
+pnpm lint:ci        # lint (prettier + eslint)
+```
+
 ## Architecture
 
-The workspace has three crates with a strict dependency rule: **only `core` is shared**.
+The Rust workspace has three crates with a strict dependency rule: **only `core` is shared**.
 
 ```
 core/  (ruas_core)       ← shared business logic, compiled as staticlib/cdylib/rlib
@@ -41,6 +67,8 @@ api/   (ruas_api)        ← Actix-web HTTP API, depends on core
 frontend/src-tauri/      ← Tauri shell (desktop/mobile), depends on core
 frontend/src/            ← Astro + SolidJS UI
 ```
+
+The frontend depends on `packages/ruas-cmtables/` (fork of codemirror-markdown-tables) via a pnpm `link:` dependency for interactive Markdown table editing.
 
 **Data flow for a feature:**
 1. Implement logic in `core/src/` and expose it publicly.
@@ -108,7 +136,7 @@ Every feature must ship with tests. Use the appropriate tier:
 - **Unit (TypeScript)** — pure utility functions and store logic, colocated as `*.test.ts` alongside the source file, run with `pnpm test` (Vitest).
 - **E2E** — critical user-facing flows in `frontend/e2e/*.spec.ts`, run with `pnpm test:e2e` (Playwright). Mock all API calls via `page.route()`; no real backend required. Add shared mock helpers to `frontend/e2e/mock-api.ts`.
 
-CI runs all tiers on every push (`cargo test -p ruas_core`, `pnpm test`, `pnpm test:e2e`). All tests must pass before merging.
+CI runs all tiers on every push: `rust` (cargo test + clippy), `js` (ruas-cmtables lint/build/test + frontend Vitest), and `e2e` (Playwright). All tests must pass before merging. See `.github/workflows/ci.yml` for details.
 
 ## Conventions
 

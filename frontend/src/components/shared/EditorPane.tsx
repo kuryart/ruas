@@ -1,4 +1,4 @@
-import { createEffect, on, onCleanup, onMount } from 'solid-js';
+import { createEffect, createMemo, on, onCleanup, onMount } from 'solid-js';
 import { Decoration, type DecorationSet, EditorView, drawSelection, keymap, lineNumbers } from '@codemirror/view';
 import { EditorState, StateEffect, StateField, type Extension } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
@@ -79,7 +79,14 @@ export default function EditorPane(props: {
     markdown({ extensions: [GFM, Superscript, Subscript], codeLanguages }),
     autoPairs(),
     history(),
-    ...(mode === 'edit' ? [markdownTables({ theme: catppuccinTableTheme }), linkRenderer()] : []),
+    ...(mode === 'edit' ? [markdownTables({
+      theme: catppuccinTableTheme,
+      // ── Ruas: vim + basic key bindings inside table cells ──────────
+      extensions: vimMode()
+        ? [vim(), keymap.of(defaultKeymap), autoPairs()]
+        : [keymap.of(defaultKeymap), autoPairs()],
+      globalKeyBindings: historyKeymap,
+    }), linkRenderer()] : []),
     folding(),
     keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
     EditorView.lineWrapping,
