@@ -112,7 +112,14 @@ jobs:
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
 
-      - name: Install dependencies
+      # ruas-cmtables must be built first — frontend links to its dist/ via pnpm link:.
+      - name: Install & build ruas-cmtables
+        working-directory: packages/ruas-cmtables
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
       - name: Install Playwright browsers
