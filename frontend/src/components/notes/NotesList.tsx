@@ -229,7 +229,7 @@ export default function NotesList() {
     if (!ctx) return [];
     switch (ctx.target.kind) {
       case 'empty': return [
-        { label: t('notes-ctx-new-note'), action: createNote },
+        { label: t('notes-ctx-new-note'), action: () => createNote() },
         { label: t('notes-ctx-new-folder'), action: createFolder },
       ];
       case 'folder': return [
@@ -321,7 +321,7 @@ export default function NotesList() {
       <div style={{ padding: '12px 14px 8px', 'flex-shrink': '0', 'border-bottom': '1px solid var(--surface0)' }}>
         <div style={{ display: 'flex', 'align-items': 'center', 'justify-content': 'space-between', 'margin-bottom': '8px' }}>
           <span style={{ 'font-size': '13px', 'font-weight': '600', color: 'var(--text)' }}>{t('notes-title')}</span>
-          <button class="list-new-btn" title={t('notes-new')} onClick={createNote} disabled={creating()}>
+          <button class="list-new-btn" title={t('notes-new')} onClick={() => createNote()} disabled={creating()}>
             +
           </button>
         </div>

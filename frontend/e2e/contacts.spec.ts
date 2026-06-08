@@ -77,6 +77,7 @@ test.describe('Contacts module', () => {
 			if (createCalled) r.fulfill({ json: [{ name: 'Alice Smith', path: MOCK_CONTACT.path, is_dir: false, children: [] }] });
 			else r.fulfill({ json: [] });
 		});
+		await page.route('**/get_contacts_dir', r => r.fulfill({ json: '/tmp/test-vault/contacts' }));
 
 		await page.goto('/');
 		await page.getByTitle('Contacts').click();

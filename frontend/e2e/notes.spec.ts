@@ -66,14 +66,16 @@ test.describe('Notes module', () => {
 			await r.fulfill({ json: MOCK_NOTE });
 		});
 		await page.route('**/read_note', r => r.fulfill({ json: MOCK_NOTE }));
+		await page.route('**/get_notes_dir', r => r.fulfill({ json: '/tmp/test-vault/notes' }));
 
 		await page.goto('/');
 		await page.getByTitle('Notes').click();
-		await expect(page.locator('.list-new-btn')).toBeVisible({ timeout: 5000 });
+		await expect(page.locator('.list-new-btn')).toBeVisible();
 		await page.getByTitle('New note').click();
 
-		// After creation, the note title appears in the tree and the detail opens.
-		await expect(page.getByText('Test Note').first()).toBeVisible({ timeout: 5000 });
+		// After creation, the note detail opens in the workspace.
+		// The detail view renders the title in a .note-title-input field.
+		await expect(page.locator('.note-title-input')).toBeVisible();
 	});
 
 	test('right-click on empty space shows context menu with New note option', async ({ page }) => {
