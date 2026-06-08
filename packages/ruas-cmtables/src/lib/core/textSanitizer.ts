@@ -88,6 +88,7 @@ function sanitizeString(displayString: string, { trim }: { trim: boolean }): str
   const escaped = protected_
     .replaceAll(lineBreakPattern, "<br>")
     .replaceAll(unescapedPipePattern, "\\$&")
+  // eslint-disable-next-line no-control-regex -- STX (\x02) placeholders wrap wiki links during sanitization
   return escaped.replace(/\x02W(\d+)\x02/g, (_, i) => placeholders[+i])
 }
 

@@ -32,7 +32,7 @@ export function onkeydown(
   //     Tab / Enter / Arrow keys before vim's keymap runs.
   //     vim adds `cm-vimMode` class to `.cm-scroller`.
   const scroller = (event.target as HTMLElement)?.closest(".cm-scroller")
-  if (scroller?.classList.contains("cm-vimMode")) return
+  if (scroller?.classList.contains("cm-vimMode") ?? false) return
 
   const navigateKey = NavigateKeys.match(event)
   if (nil(navigateKey)) return

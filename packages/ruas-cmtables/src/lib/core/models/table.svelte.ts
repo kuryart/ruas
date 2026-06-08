@@ -1773,7 +1773,7 @@ export class InternalTable implements Table {
    * {@link Table._asInternal}.
    */
   _asInternal(): InternalTable {
-    return this as InternalTable
+    return this
   }
 
   // eslint-disable-next-line @typescript-eslint/naming-convention -- JSON.stringify calls this

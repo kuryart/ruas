@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-argument -- vitest expect.extend/expect.addEqualityTesters typings are imprecise */
 /**
  * Main entry-point for Vitest test setup.
  *
@@ -57,3 +58,4 @@ const initializeMocking = function (): void {
 
 // Setup side effect
 initialize()
+/* eslint-enable @typescript-eslint/no-unsafe-argument -- re-enable after vitest expect typings block */

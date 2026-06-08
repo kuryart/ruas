@@ -39,8 +39,6 @@ export const tableLineBreakCorrectionFilterSpec: TransactionFilterSpec = (transa
     transaction.changes.newLength,
     transaction.startState.lineBreak,
   )
-  const selection = transaction.newSelection.map(lineBreakChangeSet)
-
   // ── Ruas patch: omit `selection` from the correction transaction so the
   //     original transaction's selection (set by autoPairs / wikiLink) wins.
   return [
