@@ -102,11 +102,13 @@ export async function mockCreateNote(page: Page, note = MOCK_NOTE) {
 /** Mock contacts module to return an empty list. */
 export async function mockEmptyContacts(page: Page) {
 	await page.route('**/list_contacts', r => r.fulfill({ json: [] }));
+	await page.route('**/list_contacts_tree', r => r.fulfill({ json: [] }));
 }
 
 /** Mock contacts module to return one contact. */
 export async function mockOneContact(page: Page) {
 	await page.route('**/list_contacts', r => r.fulfill({ json: [MOCK_CONTACT_META] }));
+	await page.route('**/list_contacts_tree', r => r.fulfill({ json: [{ name: 'Alice Smith', path: MOCK_CONTACT.path, is_dir: false, children: [] }] }));
 	await page.route('**/read_contact', r => r.fulfill({ json: MOCK_CONTACT }));
 }
 

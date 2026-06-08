@@ -49,27 +49,31 @@ test.describe('Notes module', () => {
 		await mockAppearance(page);
 		await mockEmptyContacts(page);
 
-		// Before: empty
-		await mockEmptyNotes(page);
-		// After create: list includes new note
-		let createCalled = false;
-		await page.route('**/create_note', async r => {
-			createCalled = true;
-			await r.fulfill({ json: MOCK_NOTE });
-		});
+		const newMeta = { path: MOCK_NOTE.path, title: 'Test Note', tags: null, modified: null };
+		const newTree = [{ name: 'Test Note', path: MOCK_NOTE.path, is_dir: false, children: [] }];
+		let created = false;
+
 		await page.route('**/list_notes', r => {
-			if (createCalled) r.fulfill({ json: [{ path: MOCK_NOTE.path, title: 'Test Note', tags: null, modified: null }] });
+			if (created) r.fulfill({ json: [newMeta] });
 			else r.fulfill({ json: [] });
 		});
-		await page.route('**/list_notes_tree', r => r.fulfill({ json: [] }));
+		await page.route('**/list_notes_tree', r => {
+			if (created) r.fulfill({ json: newTree });
+			else r.fulfill({ json: [] });
+		});
+		await page.route('**/create_note', async r => {
+			created = true;
+			await r.fulfill({ json: MOCK_NOTE });
+		});
 		await page.route('**/read_note', r => r.fulfill({ json: MOCK_NOTE }));
 
 		await page.goto('/');
 		await page.getByTitle('Notes').click();
+		await expect(page.locator('.list-new-btn')).toBeVisible({ timeout: 5000 });
 		await page.getByTitle('New note').click();
 
-		// create_note was called
-		expect(createCalled).toBe(true);
+		// After creation, the note title appears in the tree and the detail opens.
+		await expect(page.getByText('Test Note').first()).toBeVisible({ timeout: 5000 });
 	});
 
 	test('right-click on empty space shows context menu with New note option', async ({ page }) => {

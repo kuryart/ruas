@@ -68,8 +68,13 @@ test.describe('Contacts module', () => {
 		});
 		await page.route('**/read_contact', r => r.fulfill({ json: MOCK_CONTACT }));
 		// After create, list returns the new contact
+		const newMeta = { path: MOCK_CONTACT.path, display_name: 'Alice Smith', initials: 'AS', org: null, primary_email: null, tags: null };
 		await page.route('**/list_contacts', r => {
-			if (createCalled) r.fulfill({ json: [{ path: MOCK_CONTACT.path, display_name: 'Alice Smith', initials: 'AS', org: null, primary_email: null, tags: null }] });
+			if (createCalled) r.fulfill({ json: [newMeta] });
+			else r.fulfill({ json: [] });
+		});
+		await page.route('**/list_contacts_tree', r => {
+			if (createCalled) r.fulfill({ json: [{ name: 'Alice Smith', path: MOCK_CONTACT.path, is_dir: false, children: [] }] });
 			else r.fulfill({ json: [] });
 		});
 
@@ -96,10 +101,11 @@ test.describe('Contacts module', () => {
 
 		await page.goto('/');
 		await page.getByTitle('Contacts').click();
-		// Click the contact list item specifically (not any text that might be duplicated).
-		await page.locator('.contact-list-item', { hasText: 'Alice Smith' }).click();
+		// Wait for the tree to render the contact before clicking.
+		await expect(page.locator('.contact-tree-item', { hasText: 'Alice Smith' })).toBeVisible({ timeout: 5000 });
+		await page.locator('.contact-tree-item', { hasText: 'Alice Smith' }).click();
 
-		// Contact detail opens in workspace; .contact-name is the full-name input.
-		await expect(page.locator('.contact-name')).toBeVisible({ timeout: 8000 });
+		// Contact detail opens in workspace; .note-title-input is the full-name input.
+		await expect(page.locator('.note-title-input')).toBeVisible({ timeout: 8000 });
 	});
 });
