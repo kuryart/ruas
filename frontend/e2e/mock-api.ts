@@ -82,6 +82,7 @@ export async function mockEmptyNotes(page: Page) {
 	await page.route('**/list_notes', r => r.fulfill({ json: [] }));
 	await page.route('**/list_notes_tree', r => r.fulfill({ json: [] }));
 	await page.route('**/search_notes', r => r.fulfill({ json: [] }));
+	await page.route('**/get_notes_dir', r => r.fulfill({ json: MOCK_VAULT.path + '/notes' }));
 }
 
 /** Mock notes module to return one note. */
@@ -90,6 +91,7 @@ export async function mockOneNote(page: Page) {
 	await page.route('**/list_notes_tree', r => r.fulfill({ json: [{ name: 'Test Note', path: MOCK_NOTE.path, is_dir: false, children: [] }] }));
 	await page.route('**/search_notes', r => r.fulfill({ json: [MOCK_NOTE_META] }));
 	await page.route('**/read_note', r => r.fulfill({ json: MOCK_NOTE }));
+	await page.route('**/get_notes_dir', r => r.fulfill({ json: MOCK_VAULT.path + '/notes' }));
 }
 
 /** Mock note creation to return a new note. */
@@ -102,12 +104,16 @@ export async function mockCreateNote(page: Page, note = MOCK_NOTE) {
 /** Mock contacts module to return an empty list. */
 export async function mockEmptyContacts(page: Page) {
 	await page.route('**/list_contacts', r => r.fulfill({ json: [] }));
+	await page.route('**/list_contacts_tree', r => r.fulfill({ json: [] }));
+	await page.route('**/get_contacts_dir', r => r.fulfill({ json: MOCK_VAULT.path + '/contacts' }));
 }
 
 /** Mock contacts module to return one contact. */
 export async function mockOneContact(page: Page) {
 	await page.route('**/list_contacts', r => r.fulfill({ json: [MOCK_CONTACT_META] }));
+	await page.route('**/list_contacts_tree', r => r.fulfill({ json: [{ name: 'Alice Smith', path: MOCK_CONTACT.path, is_dir: false, children: [] }] }));
 	await page.route('**/read_contact', r => r.fulfill({ json: MOCK_CONTACT }));
+	await page.route('**/get_contacts_dir', r => r.fulfill({ json: MOCK_VAULT.path + '/contacts' }));
 }
 
 /** Mock contact creation. */

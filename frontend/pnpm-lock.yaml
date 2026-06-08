@@ -87,8 +87,8 @@ importers:
         specifier: ^5.10.2
         version: 5.10.2(@types/node@24.0.8)(rollup@4.44.1)(typescript@5.8.3)
       codemirror-markdown-tables:
-        specifier: link:../../ruas-cmtables
-        version: link:../../ruas-cmtables
+        specifier: link:../packages/ruas-cmtables
+        version: link:../packages/ruas-cmtables
       fuse.js:
         specifier: ^7.4.0
         version: 7.4.0
