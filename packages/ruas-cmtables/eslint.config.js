@@ -16,7 +16,7 @@ import eslintCommentsConfigs from "@eslint-community/eslint-plugin-eslint-commen
 const eslintComments =
   eslintCommentsConfigs.recommended["plugins"]["@eslint-community/eslint-comments"]
 
-const gitignorePath = fileURLToPath(new URL("./.gitignore", import.meta.url))
+const gitignorePath = fileURLToPath(new URL("../../.gitignore", import.meta.url))
 
 const commentRules = {
   // Require a eslint-enable comment for every eslint-disable comment
