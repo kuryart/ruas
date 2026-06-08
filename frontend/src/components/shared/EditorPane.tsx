@@ -5,7 +5,7 @@ import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirro
 import { markdown } from '@codemirror/lang-markdown';
 import { GFM, Subscript, Superscript } from '@lezer/markdown';
 import { catppuccinHighlight, catppuccinTheme } from './catppuccinTheme';
-// ── Interactive table editing (codemirror-markdown-tables) ──────────────────
+// ── Interactive table editing (codemirror-markdown-tables, Ruas fork) ──
 import { markdownTables } from 'codemirror-markdown-tables';
 import { catppuccinTableTheme } from './editor/tableTheme';
 import { autoPairs } from './editor/autoPairs';

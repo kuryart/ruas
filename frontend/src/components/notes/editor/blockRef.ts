@@ -64,7 +64,6 @@ export function blockRef(): Extension {
           patchFuzzy({ query: ctx.query, onSelect, onClose });
         }
 
-        // Use plugin instance as key so at most ONE measurement is queued at a time.
         view.requestMeasure({
           key: this,
           read: () => view.coordsAtPos(ctx.queryFrom),
@@ -75,7 +74,6 @@ export function blockRef(): Extension {
           },
         });
 
-        // Cache hit: restore already-fetched items immediately.
         if (ctx.noteTitle === this.cachedTitle && this.cachedPath) {
           if (this.cachedItems.length) patchFuzzy({ items: this.cachedItems });
           return;
@@ -131,8 +129,6 @@ export function blockRef(): Extension {
     },
   );
 
-  // Prevent CM6 from processing navigation keys while the blockRef popup is open.
-  // Returns true (= "handled") so CM6 doesn't move the cursor.
   const guardKeys = keymap.of(
     ['ArrowUp', 'ArrowDown', 'Enter', 'Tab', 'Escape'].map(key => ({
       key,

@@ -16,8 +16,6 @@ export async function openNoteByTitle(title: string, permanent = false, blockId?
 		const results = await invoke<NoteMeta[]>('search_notes', { query: title });
 		const note = results.find(r => r.title.toLowerCase() === title.toLowerCase()) ?? results[0];
 		if (note) {
-			// Queue the scroll target *before* opening so the detail view picks it up
-			// as soon as its content is ready.
 			if (blockId) setPendingBlock({ path: note.path, blockId });
 			if (permanent) openNotePermanent(note.path, note.title);
 			else navigateToNote(note.path, note.title);
@@ -64,7 +62,7 @@ function detectWiki(state: EditorState): WikiCtx | null {
 	const between = before.slice(idx + 2);
 	if (between.includes(']]') || between.includes('[')) return null;
 	const query = between.split('|')[0];
-	if (query.includes('^')) return null; // block-ref territory
+	if (query.includes('^')) return null;
 	return { queryFrom: line.from + idx + 2, queryTo: pos, query };
 }
 
@@ -82,7 +80,7 @@ export function wikiLinks(): Extension {
 			run(view: EditorView) {
 				const ctx = detectWiki(view.state);
 				if (!ctx) {
-					this.token++; // cancel any pending async
+					this.token++;
 					if (isFuzzyOpen() && fuzzyState()?.source === 'wiki') closeFuzzy();
 					return;
 				}
@@ -90,7 +88,6 @@ export function wikiLinks(): Extension {
 				const onSelect = (item: FuzzyItem) => this.applySelect(view, item);
 				const onClose = () => closeFuzzy();
 
-				// Take over the popup regardless of which plugin currently owns it.
 				if (!isFuzzyOpen() || fuzzyState()?.source !== 'wiki') {
 					openFuzzy({ source: 'wiki', items: [], query: ctx.query, anchor: this.lastAnchor ?? { x: 0, y: 0 }, onSelect, onClose });
 				} else {
@@ -127,6 +124,9 @@ export function wikiLinks(): Extension {
 				const hasClose = view.state.sliceDoc(ctx.queryTo, ctx.queryTo + 2) === ']]';
 				const insert = item.label + (hasClose ? '' : ']]');
 				const caret = ctx.queryFrom + item.label.length + 2;
+				// The codemirror-markdown-tables fork defers its formatting dispatch
+				// via setTimeout(0), so we can safely dispatch synchronously here
+				// without risk of nested re-entrance into wiki-link detection.
 				view.dispatch({
 					changes: { from: ctx.queryFrom, to: ctx.queryTo, insert },
 					selection: { anchor: caret },
@@ -152,7 +152,6 @@ export function wikiLinks(): Extension {
 	return [plugin, wikiClick, guardKeys];
 }
 
-// ── Link rendering decorations (edit mode) ──────────────────────────────────
 // ── Link rendering decorations (edit mode) ──────────────────────────────────
 
 const wikiDeco = Decoration.mark({
@@ -187,7 +186,6 @@ const linkRenderPlugin = ViewPlugin.fromClass(class {
   constructor(view: EditorView) {
     try {
       this.decorations = buildLinkDecos(view);
-      console.log('linkRenderPlugin OK, decos:', this.decorations.size);
     } catch (e) {
       console.error('linkRenderPlugin failed:', e);
       this.decorations = Decoration.none;

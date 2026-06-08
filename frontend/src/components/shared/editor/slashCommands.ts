@@ -40,7 +40,7 @@ function detectSlash(state: EditorState): SlashCtx | null {
   const before = line.text.slice(0, sel.head - line.from);
   const m = /^\/([a-zA-Z0-9 ]*)$/.exec(before);
   if (!m) return null;
-  if (line.text.slice(sel.head - line.from).trim() !== '') return null; // nothing after caret
+  if (line.text.slice(sel.head - line.from).trim() !== '') return null;
   return { from: line.from, to: sel.head, query: m[1] };
 }
 
