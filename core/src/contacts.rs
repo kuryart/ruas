@@ -232,6 +232,21 @@ impl Default for ContactsModule {
     }
 }
 
+/// Recursively collect every `.md` file under `dir`.
+fn collect_md_files(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut files = Vec::new();
+    let Ok(rd) = std::fs::read_dir(dir) else { return files };
+    for entry in rd.flatten() {
+        let p = entry.path();
+        if p.is_dir() {
+            files.extend(collect_md_files(&p));
+        } else if p.extension().and_then(|e| e.to_str()) == Some("md") {
+            files.push(p);
+        }
+    }
+    files
+}
+
 impl ContactsModule {
     fn contacts_dir<'a>(&self, ctx: &VaultContext<'a>) -> std::path::PathBuf {
         ctx.vault_path.join("contacts")
@@ -242,16 +257,10 @@ impl ContactsModule {
     fn cmd_list(&self, ctx: &VaultContext<'_>) -> DispatchResult {
         let dir = self.contacts_dir(ctx);
         let mut metas: Vec<ContactMeta> = Vec::new();
-        if let Ok(rd) = std::fs::read_dir(&dir) {
-            for entry in rd.flatten() {
-                let p = entry.path();
-                if p.extension().and_then(|e| e.to_str()) != Some("md") {
-                    continue;
-                }
-                if let Ok(content) = std::fs::read_to_string(&p) {
-                    if let Ok(c) = parse_contact(&p.to_string_lossy(), &content) {
-                        metas.push(contact_to_meta(&c));
-                    }
+        for p in collect_md_files(&dir) {
+            if let Ok(content) = std::fs::read_to_string(&p) {
+                if let Ok(c) = parse_contact(&p.to_string_lossy(), &content) {
+                    metas.push(contact_to_meta(&c));
                 }
             }
         }
@@ -634,15 +643,10 @@ impl Module for ContactsModule {
         std::fs::create_dir_all(&dir)
             .map_err(|e| format!("contacts: cannot create contacts dir: {e}"))?;
 
-        // Build the initial contact index — fast scan of the contacts directory
+        // Build the initial contact index — recursive scan of the contacts directory
         if let Some(index) = ctx.index() {
-            if let Ok(entries) = std::fs::read_dir(&dir) {
-                for entry in entries.flatten() {
-                    let p = entry.path();
-                    if p.extension().and_then(|e| e.to_str()) == Some("md") {
-                        self.index_contact_file(index, &p);
-                    }
-                }
+            for p in collect_md_files(&dir) {
+                self.index_contact_file(index, &p);
             }
         }
 

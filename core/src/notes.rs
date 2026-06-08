@@ -182,25 +182,34 @@ pub fn note_to_meta(n: &Note) -> NoteMeta {
     }
 }
 
-/// Scan a directory of `.md` notes and return metas ranked by relevance to
-/// `query`. An empty query returns every note ordered by last-modified.
+/// Recursively collect every `.md` file under `dir`.
+fn collect_md_files(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut files = Vec::new();
+    let Ok(rd) = std::fs::read_dir(dir) else { return files };
+    for entry in rd.flatten() {
+        let p = entry.path();
+        if p.is_dir() {
+            files.extend(collect_md_files(&p));
+        } else if p.extension().and_then(|e| e.to_str()) == Some("md") {
+            files.push(p);
+        }
+    }
+    files
+}
+
+/// Scan a directory of `.md` notes recursively and return metas ranked by
+/// relevance to `query`. An empty query returns every note ordered by last-modified.
 /// Shared by the Notes module (Tauri) and the web API.
 pub fn search_notes_in_dir(dir: &std::path::Path, query: &str) -> Vec<NoteMeta> {
     let q = query.trim().to_lowercase();
     let mut scored: Vec<(i64, NoteMeta)> = Vec::new();
-    if let Ok(rd) = std::fs::read_dir(dir) {
-        for entry in rd.flatten() {
-            let p = entry.path();
-            if p.extension().and_then(|e| e.to_str()) != Some("md") {
-                continue;
-            }
-            let Ok(content) = std::fs::read_to_string(&p) else { continue };
-            let Ok(n) = parse_note(&p.to_string_lossy(), &content) else { continue };
-            let meta = note_to_meta(&n);
-            let score = score_note(&q, &meta, &n.body);
-            if q.is_empty() || score > 0 {
-                scored.push((score, meta));
-            }
+    for p in collect_md_files(dir) {
+        let Ok(content) = std::fs::read_to_string(&p) else { continue };
+        let Ok(n) = parse_note(&p.to_string_lossy(), &content) else { continue };
+        let meta = note_to_meta(&n);
+        let score = score_note(&q, &meta, &n.body);
+        if q.is_empty() || score > 0 {
+            scored.push((score, meta));
         }
     }
     // Higher score first; tie-break on most recently modified.
@@ -253,29 +262,23 @@ pub fn find_backlinks_in_dir(dir: &std::path::Path, target_path: &str) -> Vec<Ba
     }
 
     let mut out: Vec<BacklinkMeta> = Vec::new();
-    if let Ok(rd) = std::fs::read_dir(dir) {
-        for entry in rd.flatten() {
-            let p = entry.path();
-            if p.extension().and_then(|e| e.to_str()) != Some("md") {
-                continue;
-            }
-            if p.to_string_lossy() == target_path {
-                continue; // skip self-references
-            }
-            let Ok(content) = std::fs::read_to_string(&p) else { continue };
-            let Ok(note) = parse_note(&p.to_string_lossy(), &content) else { continue };
-            for (link, context) in wiki_links_with_context(&note.body) {
-                let key = link.to_lowercase();
-                let hit = (!target_title.is_empty() && key == target_title)
-                    || (!target_uid.is_empty() && key == target_uid);
-                if hit {
-                    out.push(BacklinkMeta {
-                        source_path: p.to_string_lossy().to_string(),
-                        source_title: note.frontmatter.title.clone().unwrap_or_else(|| "Untitled".to_string()),
-                        context,
-                    });
-                    break; // one entry per source note
-                }
+    for p in collect_md_files(dir) {
+        if p.to_string_lossy() == target_path {
+            continue; // skip self-references
+        }
+        let Ok(content) = std::fs::read_to_string(&p) else { continue };
+        let Ok(note) = parse_note(&p.to_string_lossy(), &content) else { continue };
+        for (link, context) in wiki_links_with_context(&note.body) {
+            let key = link.to_lowercase();
+            let hit = (!target_title.is_empty() && key == target_title)
+                || (!target_uid.is_empty() && key == target_uid);
+            if hit {
+                out.push(BacklinkMeta {
+                    source_path: p.to_string_lossy().to_string(),
+                    source_title: note.frontmatter.title.clone().unwrap_or_else(|| "Untitled".to_string()),
+                    context,
+                });
+                break; // one entry per source note
             }
         }
     }
@@ -433,16 +436,10 @@ impl NotesModule {
     fn cmd_list(&self, ctx: &VaultContext<'_>) -> DispatchResult {
         let dir = self.notes_dir(ctx);
         let mut metas: Vec<NoteMeta> = Vec::new();
-        if let Ok(rd) = std::fs::read_dir(&dir) {
-            for entry in rd.flatten() {
-                let p = entry.path();
-                if p.extension().and_then(|e| e.to_str()) != Some("md") {
-                    continue;
-                }
-                if let Ok(content) = std::fs::read_to_string(&p) {
-                    if let Ok(n) = parse_note(&p.to_string_lossy(), &content) {
-                        metas.push(note_to_meta(&n));
-                    }
+        for p in collect_md_files(&dir) {
+            if let Ok(content) = std::fs::read_to_string(&p) {
+                if let Ok(n) = parse_note(&p.to_string_lossy(), &content) {
+                    metas.push(note_to_meta(&n));
                 }
             }
         }
@@ -883,13 +880,8 @@ impl Module for NotesModule {
             .map_err(|e| format!("notes: cannot create notes dir: {e}"))?;
 
         if let Some(index) = ctx.index() {
-            if let Ok(entries) = std::fs::read_dir(&dir) {
-                for entry in entries.flatten() {
-                    let p = entry.path();
-                    if p.extension().and_then(|e| e.to_str()) == Some("md") {
-                        self.index_note_file(index, &p);
-                    }
-                }
+            for p in collect_md_files(&dir) {
+                self.index_note_file(index, &p);
             }
         }
 

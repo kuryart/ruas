@@ -2,7 +2,7 @@ import { Decoration, type DecorationSet, EditorView, WidgetType } from '@codemir
 import { syntaxTree } from '@codemirror/language';
 import { type EditorState, type Range, StateField } from '@codemirror/state';
 import { EmbedWidget } from './editor/embedRenderer';
-import { splitTableCells } from '../shared/editor/tableInteraction';
+import { splitTableCells } from '../shared/editor/tableUtils';
 
 // ── Heading widget ───────────────────────────────────────────────────────────
 
@@ -431,7 +431,15 @@ function buildDecorations(state: EditorState): DecorationSet {
 export const markdownLivePreview = StateField.define<DecorationSet>({
 	create: state => buildDecorations(state),
 	update(value, tr) {
-		if (tr.docChanged || tr.selection) return buildDecorations(tr.state);
+		// Rebuild when the document changed.
+		if (tr.docChanged) return buildDecorations(tr.state);
+		if (tr.selection) {
+			// Freeze decorations while the user is dragging a non‑empty text
+			// selection — rebuild on every cursor‑line change would toggle
+			// view‑like styling on/off rapidly, causing a visual flash.
+			if (!tr.state.selection.main.empty) return value;
+			return buildDecorations(tr.state);
+		}
 		return value;
 	},
 	provide: f => EditorView.decorations.from(f),

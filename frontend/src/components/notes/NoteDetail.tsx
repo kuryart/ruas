@@ -331,16 +331,18 @@ export default function NoteDetail(props: { path: string; panelId: string }) {
           </div>
         </div>
 
-        {/* ── Frontmatter editor (hidden in raw — YAML is in the editor) ── */}
-        <Show when={mode() !== 'raw'}>
-          <FrontmatterEditor fm={fm()} onChange={onFmChange} />
-        </Show>
+        {/* ── Scrollable body (frontmatter + content, matches contacts layout) ── */}
+        <div style={{ flex: '1 1 0', 'overflow-y': 'auto' }}>
+          {/* ── Frontmatter editor (hidden in raw — YAML is in the editor) ── */}
+          <Show when={mode() !== 'raw'}>
+            <FrontmatterEditor fm={fm()} onChange={onFmChange} />
+          </Show>
 
-        {/* ── Content ──────────────────────────────────────────────── */}
-        <div style={{ flex: '1 1 0', overflow: 'hidden' }}>
+          {/* ── Content ──────────────────────────────────────────────── */}
           <Show when={mode() === 'view'}>
             <ViewPane
               body={body()}
+              autoGrow
               onReady={api => (viewApi = api)}
               onWikiLinkClick={openNoteByTitle}
               resolveEmbed={fillNoteEmbed}
@@ -350,6 +352,7 @@ export default function NoteDetail(props: { path: string; panelId: string }) {
             <EditorPane
               content={body()}
               mode="edit"
+              autoGrow
               onChange={onBodyChange}
               scrollTarget={scrollBlockId()}
               onReady={api => (editorApi = api)}
@@ -360,6 +363,7 @@ export default function NoteDetail(props: { path: string; panelId: string }) {
             <EditorPane
               content={rawDoc()}
               mode="raw"
+              autoGrow
               onChange={onRawDocChange}
             />
           </Show>

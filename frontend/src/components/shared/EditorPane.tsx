@@ -5,10 +5,9 @@ import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirro
 import { markdown } from '@codemirror/lang-markdown';
 import { GFM, Subscript, Superscript } from '@lezer/markdown';
 import { catppuccinHighlight, catppuccinTheme } from './catppuccinTheme';
-// ── Import table editor ──────────────────────────────────────────────────
-import { tableInteraction, tableRenderer } from './editor/tableInteraction';
-console.log('EditorPane loaded — tableInteraction:', tableInteraction);
-console.log('EditorPane loaded — tableRenderer:', tableRenderer);
+// ── Interactive table editing (codemirror-markdown-tables, Ruas fork) ──
+import { markdownTables } from 'codemirror-markdown-tables';
+import { catppuccinTableTheme } from './editor/tableTheme';
 import { autoPairs } from './editor/autoPairs';
 import { blockIdConceal } from './editor/blockIdConceal';
 import { latex } from './editor/latexRenderer';
@@ -80,7 +79,7 @@ export default function EditorPane(props: {
     markdown({ extensions: [GFM, Superscript, Subscript], codeLanguages }),
     autoPairs(),
     history(),
-    ...(mode === 'edit' ? [tableInteraction(), tableRenderer(), linkRenderer()] : []),
+    ...(mode === 'edit' ? [markdownTables({ theme: catppuccinTableTheme }), linkRenderer()] : []),
     folding(),
     keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
     EditorView.lineWrapping,

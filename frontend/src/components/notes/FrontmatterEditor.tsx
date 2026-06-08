@@ -23,6 +23,7 @@ function formatDate(iso: string | undefined, locale: string): string {
  *  key/value properties. Title stays in the toolbar. */
 export default function FrontmatterEditor(props: { fm: Frontmatter; onChange: (fm: Frontmatter) => void }) {
   const { t, locale } = useI18n();
+  const [open, setOpen] = createSignal(true);
   const [tagDraft, setTagDraft] = createSignal('');
   const [newKey, setNewKey] = createSignal('');
 
@@ -60,12 +61,20 @@ export default function FrontmatterEditor(props: { fm: Frontmatter; onChange: (f
   );
 
   return (
-    <div class="frontmatter-editor" style={{
-      'flex-shrink': '0', padding: '10px 14px', display: 'flex', 'flex-direction': 'column', gap: '6px',
-      'border-bottom': '1px solid var(--surface0)', background: 'var(--base)',
-    }}>
-      {/* Tags */}
-      <Row label={t('notes-fm-tags')}>
+    <div style={{ 'border-bottom': '1px solid var(--surface0)' }}>
+      {/* Collapsible header */}
+      <button class="props-header" onClick={() => setOpen(v => !v)}>
+        <span style={{ 'font-size': '9px', transition: 'transform 0.15s', transform: open() ? 'rotate(90deg)' : 'rotate(0deg)' }}>▶</span>
+        {t('notes-fm-header')}
+      </button>
+
+      <Show when={open()}>
+        <div class="frontmatter-editor" style={{
+          padding: '10px 14px', display: 'flex', 'flex-direction': 'column', gap: '6px',
+          background: 'var(--base)',
+        }}>
+          {/* Tags */}
+          <Row label={t('notes-fm-tags')}>
         <div style={{ display: 'flex', 'flex-wrap': 'wrap', gap: '4px', 'align-items': 'center' }}>
           <For each={tags()}>
             {tag => (
@@ -129,6 +138,8 @@ export default function FrontmatterEditor(props: { fm: Frontmatter; onChange: (f
           </button>
         </div>
       </Row>
+        </div>
+      </Show>
     </div>
   );
 }

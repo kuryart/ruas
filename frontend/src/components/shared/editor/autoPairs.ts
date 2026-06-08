@@ -20,7 +20,6 @@ function wrapOrInsert(view: EditorView, ch: string): boolean {
 
   const tr = state.changeByRange(range => {
     if (range.empty) {
-      // `*` → `*|*`, `[` → `[|]()`, `(` → `(|)`, etc.
       const insert = pair.open + pair.close;
       const caret = range.from + pair.open.length;
       return { changes: { from: range.from, insert }, range: EditorSelection.cursor(caret) };
