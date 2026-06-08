@@ -31,8 +31,8 @@ export function onkeydown(
   //     handling to vim's keymap. The DOM handler would otherwise steal
   //     Tab / Enter / Arrow keys before vim's keymap runs.
   //     vim adds `cm-vimMode` class to `.cm-scroller`.
-  const scroller = (event.target as HTMLElement)?.closest('.cm-scroller');
-  if (scroller?.classList.contains('cm-vimMode')) return;
+  const scroller = (event.target as HTMLElement)?.closest(".cm-scroller")
+  if (scroller?.classList.contains("cm-vimMode")) return
 
   const navigateKey = NavigateKeys.match(event)
   if (nil(navigateKey)) return

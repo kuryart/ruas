@@ -27,9 +27,13 @@ export const tableFormattingUpdaterSpec: UpdateListenerSpec = ({
   // ── Ruas patch: defer the dispatch so it doesn't nest inside external
   //     transaction cycles (e.g. wiki-link fuzzy completion), which would
   //     re-trigger the ViewPlugin.update and re-open the popup.
-  setTimeout(() => view.dispatch({
-    annotations: TableAnnotation.of("table.format"),
-    changes: formattingChangeSet,
-    selection,
-  }), 0)
+  setTimeout(
+    () =>
+      view.dispatch({
+        annotations: TableAnnotation.of("table.format"),
+        changes: formattingChangeSet,
+        selection,
+      }),
+    0,
+  )
 }

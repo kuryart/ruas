@@ -78,11 +78,13 @@ export function unsanitize(actualText: Text): Text {
 function sanitizeString(displayString: string, { trim }: { trim: boolean }): string {
   // ── Ruas patch: protect pipes inside [[...]] wiki-links before escaping.
   const placeholders: string[] = []
-  const protected_ = (trim ? trimWhitespace(displayString) : displayString)
-    .replace(/\[\[[^\]]+\]\]/g, (m) => {
+  const protected_ = (trim ? trimWhitespace(displayString) : displayString).replace(
+    /\[\[[^\]]+\]\]/g,
+    (m) => {
       placeholders.push(m)
       return "\x02W" + (placeholders.length - 1) + "\x02"
-    })
+    },
+  )
   const escaped = protected_
     .replaceAll(lineBreakPattern, "<br>")
     .replaceAll(unescapedPipePattern, "\\$&")
