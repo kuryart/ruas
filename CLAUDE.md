@@ -150,3 +150,4 @@ CI runs all tiers on every push: `rust` (cargo test + clippy), `js` (ruas-cmtabl
 ## Notes
 
 <!-- Stub: add quick-reference notes here as the project evolves. -->
+- salve essa recomendação pragmática na memória

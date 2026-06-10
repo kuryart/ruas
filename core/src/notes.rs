@@ -404,7 +404,7 @@ fn split_frontmatter(content: &str) -> Result<(NoteFrontmatter, String), String>
 use crate::filename::{sanitize_filename, unique_filename};
 use crate::module::{
     Capability, CommandDescriptor, DispatchResult, Module, ModuleEvent, ModuleInfo,
-    ParamDescriptor, ParamKind, SettingField, VaultContext, Version,
+    ParamDescriptor, ParamKind, SettingField, VaultContext,
 };
 use chrono::Utc;
 use serde_json::Value;
@@ -421,7 +421,7 @@ impl Default for NotesModule {
             info: ModuleInfo {
                 id: "ruas.notes".to_string(),
                 name: "Notes".to_string(),
-                version: Version::new(0, 1, 0),
+                version: "0.1.0".to_string(),
                 description: "Markdown note-taking backed by plain files".to_string(),
             },
         }
@@ -880,6 +880,9 @@ impl Module for NotesModule {
             .map_err(|e| format!("notes: cannot create notes dir: {e}"))?;
 
         if let Some(index) = ctx.index() {
+            // Purge stale entries (notes deleted while the app was closed)
+            index.purge_entity_dir(&dir.to_string_lossy(), "note")
+                .map_err(|e| format!("notes: {e}"))?;
             for p in collect_md_files(&dir) {
                 self.index_note_file(index, &p);
             }

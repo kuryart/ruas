@@ -1,5 +1,6 @@
 [workspace]
 members = ["core", "api", "frontend/src-tauri"]
+exclude = ["plugins/vcf-importer"]
 resolver = "2"
 
 # Workspace-wide clippy configuration.
@@ -7,6 +8,6 @@ resolver = "2"
 # Style and perf are warnings — reviewed but never block CI.
 [workspace.lints.clippy]
 correctness = { level = "deny", priority = -1 }
-suspicious  = { level = "deny", priority = -1 }
-perf        = { level = "warn", priority = -1 }
-style       = { level = "warn", priority = -1 }
+suspicious = { level = "deny", priority = -1 }
+perf = { level = "warn", priority = -1 }
+style = { level = "warn", priority = -1 }

@@ -19,7 +19,7 @@ use std::sync::Arc;
 
 // ── Version ────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
 pub struct Version {
     pub major: u32,
     pub minor: u32,
@@ -40,13 +40,13 @@ impl std::fmt::Display for Version {
 
 // ── ModuleInfo ─────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ModuleInfo {
     /// Reverse-domain identifier — globally unique.
     /// Built-ins: `"ruas.*"`. Third-party plugins must not use this namespace.
     pub id: String,
     pub name: String,
-    pub version: Version,
+    pub version: String,
     pub description: String,
 }
 
@@ -191,6 +191,13 @@ pub struct RegistryEntry {
     pub(crate) approved: Vec<Capability>,
 }
 
+impl RegistryEntry {
+    /// Public read-only access to approved capabilities.
+    pub fn approved_capabilities(&self) -> &[Capability] {
+        &self.approved
+    }
+}
+
 // ── ModuleRegistry ─────────────────────────────────────────────────────────
 
 /// Holds all registered modules and coordinates lifecycle events.
@@ -239,7 +246,7 @@ impl ModuleRegistry {
 
     // ── Registration ───────────────────────────────────────────────────
 
-    /// Register a built-in module (all capabilities pre-approved).
+    /// Register a built-in module (all capabilities pre-approved, cannot be disabled).
     pub fn register(&mut self, module: impl Module + 'static) {
         let approved = module.capabilities().to_vec();
         self.entries.push(RegistryEntry {
@@ -247,6 +254,51 @@ impl ModuleRegistry {
             trust: TrustLevel::Core,
             approved,
         });
+    }
+
+    /// Register a native plugin (all capabilities pre-approved, can be disabled).
+    /// Native plugins are shipped with the app in the `plugins/` directory.
+    pub fn register_native(&mut self, module: impl Module + 'static) {
+        let approved = module.capabilities().to_vec();
+        self.entries.push(RegistryEntry {
+            module: Box::new(module),
+            trust: TrustLevel::Native,
+            approved,
+        });
+    }
+
+    /// Register a plugin with explicitly approved capabilities.
+    ///
+    /// Plugins start with no capabilities; each capability must be individually
+    /// approved by the user before the plugin can dispatch commands that require it.
+    /// The `approved` list is typically loaded from the plugin's persisted config.
+    pub fn register_plugin(
+        &mut self,
+        module: impl Module + 'static,
+        approved: Vec<Capability>,
+    ) {
+        self.entries.push(RegistryEntry {
+            module: Box::new(module),
+            trust: TrustLevel::Plugin,
+            approved,
+        });
+    }
+
+    /// Unregister a module by its ID. Returns `true` if the entry was found and removed.
+    pub fn unregister(&mut self, id: &str) -> bool {
+        let len_before = self.entries.len();
+        self.entries.retain(|e| e.module.info().id != id);
+        self.entries.len() < len_before
+    }
+
+    /// Update the approved capabilities for a registered plugin entry.
+    /// Silently no-ops if the entry is not found or is `TrustLevel::Core` or `TrustLevel::Native`.
+    pub fn set_plugin_approved(&mut self, id: &str, approved: Vec<Capability>) {
+        if let Some(entry) = self.entries.iter_mut().find(|e| e.module.info().id == id) {
+            if entry.trust == TrustLevel::Plugin {
+                entry.approved = approved;
+            }
+        }
     }
 
     // ── Introspection ──────────────────────────────────────────────────
@@ -267,7 +319,7 @@ impl ModuleRegistry {
     /// does not have approved. Empty list = all capabilities granted.
     fn check_capabilities(&self, entry: &RegistryEntry) -> Vec<String> {
         match entry.trust {
-            TrustLevel::Core => vec![], // built-ins are always trusted
+            TrustLevel::Core | TrustLevel::Native => vec![], // built-ins & native are always trusted
             TrustLevel::Plugin => entry
                 .module
                 .capabilities()
@@ -425,7 +477,7 @@ mod tests {
                 info: ModuleInfo {
                     id: id.to_string(),
                     name: "Stub".into(),
-                    version: Version::new(0, 1, 0),
+                    version: "0.1.0".to_string(),
                     description: "Test stub".into(),
                 },
                 opened,
@@ -502,7 +554,7 @@ mod tests {
     }
 
     fn stub_info(id: &str) -> ModuleInfo {
-        ModuleInfo { id: id.into(), name: "X".into(), version: Version::new(0,1,0), description: "".into() }
+        ModuleInfo { id: id.into(), name: "X".into(), version: "0.1.0".into(), description: "".into() }
     }
 
     fn temp_dir() -> std::path::PathBuf {

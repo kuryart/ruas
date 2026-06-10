@@ -1,5 +1,6 @@
 mod contacts;
 mod notes;
+mod plugins;
 
 use actix_cors::Cors;
 use actix_web::{App, HttpServer, http};
@@ -41,6 +42,16 @@ async fn main() -> std::io::Result<()> {
             .service(notes::read_appearance_css)
             .service(notes::get_appearance_config)
             .service(notes::set_appearance_config)
+            // Plugin management
+            .service(plugins::list_modules)
+            .service(plugins::list_plugins)
+            .service(plugins::invoke_module)
+            .service(plugins::enable_plugin)
+            .service(plugins::disable_plugin)
+            .service(plugins::uninstall_plugin)
+            .service(plugins::install_plugin_files)
+            .service(plugins::get_module_settings)
+            .service(plugins::set_module_settings)
     })
     .bind(("0.0.0.0", 8080))?
     .run()

@@ -10,6 +10,7 @@ import { invoke } from '../utils/api';
 import SettingsModal from './settings/SettingsModal';
 import CommandPalette from './notes/CommandPalette';
 import FuzzyPopup from './notes/FuzzyPopup';
+import PermissionDialog from './settings/PermissionDialog';
 import Sidebar from './Sidebar';
 import LeftPanel from './LeftPanel';
 import RightPanel from './notes/RightPanel';
@@ -69,6 +70,9 @@ export default function App() {
 
         {/* Global fuzzy-find popup (wiki links, slash commands, …) */}
         <FuzzyPopup />
+
+        {/* Plugin permission dialog */}
+        <PermissionDialog />
 
         <Show
           when={activeVault()}

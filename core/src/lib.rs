@@ -4,6 +4,7 @@ pub mod filename;
 pub mod index;
 pub mod module;
 pub mod notes;
+pub mod plugin;
 pub mod vault;
 
 pub use appearance::{

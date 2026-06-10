@@ -16,8 +16,9 @@ export const catppuccinTheme = EditorView.theme(
 			overflow: 'auto',
 		},
 		'.cm-content': {
-			// padding: '24px 32px',
-			padding: '32px 20% 32px 20%',
+			maxWidth: '800px',
+			margin: '0 auto',
+			padding: '32px 16px',
 			caretColor: 'var(--accent)',
 			minHeight: '100%',
 		},
@@ -29,10 +30,10 @@ export const catppuccinTheme = EditorView.theme(
 		'&.cm-focused': { outline: 'none' },
 		'.cm-activeLine': { backgroundColor: 'rgba(49,50,68,0.35)' },
 		'.cm-gutters': {
-			backgroundColor: 'var(--mantle)',
+			backgroundColor: 'transparent',
 			color: 'var(--overlay0)',
 			border: 'none',
-			borderRight: '1px solid var(--surface0)',
+			borderRight: 'none',
 		},
 		'.cm-lineNumbers .cm-gutterElement': {
 			paddingLeft: '8px',

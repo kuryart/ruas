@@ -1,0 +1,157 @@
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Catppuccin Mocha palette - Obsidian-inspired productivity app
+ */
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --font-sans: "Inter", "ui-sans-serif", system-ui, sans-serif;
+  --font-display: "Plus Jakarta Sans", "Inter", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-ring-offset-background: var(--background);
+
+  /* Catppuccin accent colors */
+  --color-ctp-rosewater: var(--ctp-rosewater);
+  --color-ctp-flamingo: var(--ctp-flamingo);
+  --color-ctp-pink: var(--ctp-pink);
+  --color-ctp-mauve: var(--ctp-mauve);
+  --color-ctp-red: var(--ctp-red);
+  --color-ctp-maroon: var(--ctp-maroon);
+  --color-ctp-peach: var(--ctp-peach);
+  --color-ctp-yellow: var(--ctp-yellow);
+  --color-ctp-green: var(--ctp-green);
+  --color-ctp-teal: var(--ctp-teal);
+  --color-ctp-sky: var(--ctp-sky);
+  --color-ctp-sapphire: var(--ctp-sapphire);
+  --color-ctp-blue: var(--ctp-blue);
+  --color-ctp-lavender: var(--ctp-lavender);
+
+  --color-surface-0: var(--surface-0);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+}
+
+:root {
+  --radius: 0.5rem;
+
+  /* Catppuccin Mocha base palette */
+  --ctp-base: oklch(0.226 0.025 282);
+  --ctp-mantle: oklch(0.196 0.024 282);
+  --ctp-crust: oklch(0.169 0.022 282);
+  --ctp-text: oklch(0.902 0.022 270);
+  --ctp-subtext1: oklch(0.835 0.022 270);
+  --ctp-subtext0: oklch(0.770 0.024 270);
+  --ctp-overlay2: oklch(0.700 0.026 270);
+  --ctp-overlay1: oklch(0.630 0.028 270);
+  --ctp-overlay0: oklch(0.560 0.030 270);
+  --ctp-surface2: oklch(0.485 0.032 280);
+  --ctp-surface1: oklch(0.410 0.030 280);
+  --ctp-surface0: oklch(0.330 0.028 280);
+
+  --surface-0: var(--ctp-surface0);
+  --surface-1: var(--ctp-surface1);
+  --surface-2: var(--ctp-surface2);
+
+  --ctp-rosewater: oklch(0.912 0.038 30);
+  --ctp-flamingo: oklch(0.864 0.062 18);
+  --ctp-pink: oklch(0.836 0.108 340);
+  --ctp-mauve: oklch(0.747 0.155 305);
+  --ctp-red: oklch(0.730 0.180 18);
+  --ctp-maroon: oklch(0.770 0.130 12);
+  --ctp-peach: oklch(0.810 0.135 55);
+  --ctp-yellow: oklch(0.890 0.130 100);
+  --ctp-green: oklch(0.840 0.155 145);
+  --ctp-teal: oklch(0.820 0.105 185);
+  --ctp-sky: oklch(0.840 0.095 220);
+  --ctp-sapphire: oklch(0.780 0.110 235);
+  --ctp-blue: oklch(0.760 0.135 260);
+  --ctp-lavender: oklch(0.820 0.090 280);
+
+  --background: var(--ctp-base);
+  --foreground: var(--ctp-text);
+  --card: var(--ctp-mantle);
+  --card-foreground: var(--ctp-text);
+  --popover: var(--ctp-mantle);
+  --popover-foreground: var(--ctp-text);
+  --primary: var(--ctp-mauve);
+  --primary-foreground: var(--ctp-crust);
+  --secondary: var(--ctp-surface0);
+  --secondary-foreground: var(--ctp-text);
+  --muted: var(--ctp-surface0);
+  --muted-foreground: var(--ctp-subtext0);
+  --accent: var(--ctp-surface1);
+  --accent-foreground: var(--ctp-text);
+  --destructive: var(--ctp-red);
+  --destructive-foreground: var(--ctp-crust);
+  --border: oklch(0.330 0.028 280 / 0.6);
+  --input: var(--ctp-surface0);
+  --ring: var(--ctp-mauve);
+}
+
+.dark {
+  /* same — app is dark by default */
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  html, body, #root {
+    height: 100%;
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    font-feature-settings: "cv11", "ss01", "ss03";
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+/* Scrollbar — Obsidian-like subtle */
+@layer base {
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: var(--ctp-surface0);
+    border-radius: 6px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--ctp-surface1);
+    background-clip: content-box;
+    border: 2px solid transparent;
+  }
+}

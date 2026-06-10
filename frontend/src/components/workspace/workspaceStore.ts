@@ -8,7 +8,8 @@ export type TabContent =
   | { type: 'contact-detail'; contactPath: string }
   | { type: 'notes-list' }
   | { type: 'note-detail'; notePath: string }
-  | { type: 'placeholder'; module: string };
+  | { type: 'placeholder'; module: string }
+  | { type: 'plugin'; pluginId: string; viewId: string; payload: unknown };
 
 export interface Tab {
   id: string;
@@ -380,6 +381,19 @@ export function promoteNotePreviewByPath(notePath: string) {
       break;
     }
   }
+}
+
+// ── Plugin navigation ──────────────────────────────────────────────────────
+
+export function openPluginView(pluginId: string, viewId: string, title: string, payload: unknown = null) {
+  const pid = focusedPanelId();
+  if (!panels[pid]) return;
+  openTab(pid, {
+    id: crypto.randomUUID(),
+    title,
+    content: { type: 'plugin', pluginId, viewId, payload },
+    preview: false,
+  });
 }
 
 export function updateNoteTabTitle(notePath: string, title: string) {

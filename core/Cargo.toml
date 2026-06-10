@@ -16,7 +16,13 @@ regex = "1"
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 # bundled-full ensures FTS5 is available on all platforms (including mobile)
+# bundled-full ensures FTS5 is available on all platforms (including mobile)
 rusqlite = { version = "0.31", features = ["bundled-full"] }
+# WASM plugin runtime — optional; enable with `cargo build --features wasm`
+extism = { version = "1.30", optional = true }
+
+[features]
+wasm = ["dep:extism"]
 
 [lints]
 workspace = true

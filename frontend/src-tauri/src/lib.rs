@@ -1,6 +1,7 @@
 mod appearance;
 mod contacts;
 mod notes;
+mod plugins;
 mod vault;
 mod watcher;
 
@@ -23,7 +24,106 @@ fn build_registry(rename_guard: Arc<Mutex<HashSet<String>>>) -> ruas_core::Modul
     // registry.register(ruas_core::CalendarModule::default());
     // registry.register(ruas_core::ProjectsModule::default());
     // registry.register(ruas_core::EmailModule::default());
+
+    // Load native plugins from the resources directory
+    load_native_plugins(&mut registry);
+
     registry
+}
+
+/// Load native WASM plugins from `resources/plugins/` (embedded via build.rs).
+fn load_native_plugins(registry: &mut ruas_core::ModuleRegistry) {
+    let resources = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
+
+    // In dev mode, the resources are at the project root level.
+    // Try several paths: relative to CWD (works with `cargo tauri dev`)
+    // and relative to the workspace root (works with `cargo run --bin Ruas`).
+    let plugins_dir = if cfg!(debug_assertions) {
+        #[cfg(debug_assertions)]
+        {
+            let cwd = std::env::current_dir().unwrap_or_default();
+            eprintln!("[native-plugins] CWD: {}", cwd.display());
+        }
+
+        let dev_paths = [
+            std::path::PathBuf::from("resources/plugins"),                        // cwd = frontend/src-tauri/
+            std::path::PathBuf::from("../resources/plugins"),                     // cwd = frontend/
+            std::path::PathBuf::from("../../resources/plugins"),                  // cwd = frontend/src/ (Astro)
+            std::path::PathBuf::from("frontend/src-tauri/resources/plugins"),     // cwd = repo root
+        ];
+        let mut found = None;
+        for p in &dev_paths {
+            eprintln!("[native-plugins] trying path: {} -> exists={}", p.display(), p.is_dir());
+            if p.is_dir() {
+                found = Some(p.clone());
+                break;
+            }
+        }
+        found.unwrap_or_else(|| std::path::PathBuf::from("resources/plugins"))
+    } else {
+        resources.join("resources/plugins")
+    };
+
+    eprintln!("[native-plugins] resolved plugins_dir: {}", plugins_dir.display());
+
+    if !plugins_dir.is_dir() {
+        eprintln!("[native-plugins] DIRECTORY NOT FOUND, giving up.");
+        log::info!("[native-plugins] Directory not found: {}", plugins_dir.display());
+        return;
+    }
+
+    for entry in std::fs::read_dir(&plugins_dir).into_iter().flatten().flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            eprintln!("[native-plugins] skipping non-dir: {}", path.display());
+            continue;
+        }
+        let manifest_path = path.join("manifest.json");
+        if !manifest_path.exists() {
+            eprintln!("[native-plugins] skipping (no manifest): {}", path.display());
+            continue;
+        }
+
+        eprintln!("[native-plugins] found plugin dir: {}", path.display());
+
+        match ruas_core::plugin::load_manifest(&manifest_path) {
+            Ok(manifest) => {
+                eprintln!("[native-plugins] manifest loaded: id={}", manifest.id);
+                match ruas_core::plugin::wasm::try_load_plugin_from_dir(&path, &manifest) {
+                    Ok(wasm_plugin) => {
+                        registry.register_native(wasm_plugin);
+                        eprintln!(
+                            "[native-plugins] REGISTERED: {} v{}",
+                            manifest.id,
+                            manifest.version
+                        );
+                        log::info!(
+                            "[native-plugins] Loaded: {} v{}",
+                            manifest.id,
+                            manifest.version
+                        );
+                    }
+                    Err(e) => {
+                        eprintln!("[native-plugins] FAILED to load '{}': {e}", manifest.id);
+                        log::warn!(
+                            "[native-plugins] Failed to load '{}': {e}",
+                            manifest.id
+                        );
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("[native-plugins] invalid manifest in '{}': {e}", path.display());
+                log::warn!(
+                    "[native-plugins] Invalid manifest in '{}': {e}",
+                    path.display()
+                );
+            }
+        }
+    }
 }
 
 // ── Watcher state ──────────────────────────────────────────────────────────
@@ -71,6 +171,7 @@ fn list_modules(registry: tauri::State<RegistryState>) -> serde_json::Value {
                 "description": entry.module.info().description,
                 "trust": match entry.trust {
                     ruas_core::TrustLevel::Core   => "core",
+                    ruas_core::TrustLevel::Native => "native",
                     ruas_core::TrustLevel::Plugin => "plugin",
                 },
                 "capabilities": entry.module.capabilities().iter()
@@ -246,6 +347,12 @@ pub fn run() {
             appearance::get_appearance_config,
             appearance::set_appearance_config,
             appearance::open_appearance_folder,
+            // Plugin management
+            plugins::list_plugins,
+            plugins::enable_plugin,
+            plugins::disable_plugin,
+            plugins::uninstall_plugin,
+            plugins::install_plugin_files,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

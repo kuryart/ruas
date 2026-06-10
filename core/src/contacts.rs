@@ -203,7 +203,7 @@ pub fn build_contacts_tree(dir: &std::path::Path) -> Vec<ContactTreeNode> {
 use crate::filename::{sanitize_filename, unique_filename};
 use crate::module::{
     Capability, CommandDescriptor, DispatchResult, Module, ModuleEvent, ModuleInfo,
-    ParamDescriptor, ParamKind, SettingField, VaultContext, Version,
+    ParamDescriptor, ParamKind, SettingField, VaultContext,
 };
 use chrono::Utc;
 use serde_json::Value;
@@ -225,7 +225,7 @@ impl Default for ContactsModule {
             info: ModuleInfo {
                 id: "ruas.contacts".to_string(),
                 name: "Contacts".to_string(),
-                version: Version::new(0, 1, 0),
+                version: "0.1.0".to_string(),
                 description: "vCard-based contact management backed by Markdown files".to_string(),
             },
         }
@@ -643,8 +643,11 @@ impl Module for ContactsModule {
         std::fs::create_dir_all(&dir)
             .map_err(|e| format!("contacts: cannot create contacts dir: {e}"))?;
 
-        // Build the initial contact index — recursive scan of the contacts directory
+        // Purge stale entries (files deleted while the app was closed),
+        // then rebuild the index from disk.
         if let Some(index) = ctx.index() {
+            index.purge_entity_dir(&dir.to_string_lossy(), "contact")
+                .map_err(|e| format!("contacts: {e}"))?;
             for p in collect_md_files(&dir) {
                 self.index_contact_file(index, &p);
             }
