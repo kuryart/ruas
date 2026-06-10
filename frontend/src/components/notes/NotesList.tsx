@@ -375,16 +375,9 @@ export default function NotesList() {
                   onClick={e => openNote(note.path, note.title, e.ctrlKey || e.metaKey)}
                   onContextMenu={e => openCtxMenu(e, { kind: 'note', path: note.path, title: note.title })}
                 >
-                  <div style={{ display: 'flex', 'align-items': 'baseline', gap: '6px', 'justify-content': 'space-between' }}>
-                    <span class="truncate" style={{ 'font-size': '13px', 'font-weight': '500', color: 'var(--text)', flex: '1', 'min-width': '0' }}>
-                      {note.title}
-                    </span>
-                    <Show when={note.modified}>
-                      <span style={{ 'font-size': '10px', color: 'var(--muted)', 'flex-shrink': '0', 'white-space': 'nowrap' }}>
-                        {formatRelative(note.modified!, locale())}
-                      </span>
-                    </Show>
-                  </div>
+                  <span class="truncate" style={{ 'font-size': '13px', 'font-weight': '500', color: 'var(--text)' }}>
+                    {note.title}
+                  </span>
                   <Show when={(note.tags ?? []).length > 0}>
                     <div style={{ display: 'flex', gap: '4px', 'flex-wrap': 'wrap', 'margin-top': '4px' }}>
                       <For each={note.tags!}>

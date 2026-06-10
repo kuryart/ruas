@@ -13,16 +13,10 @@ export type Frontmatter = {
 
 const KNOWN = new Set(['uid', 'title', 'tags', 'created', 'modified']);
 
-function formatDate(iso: string | undefined, locale: string): string {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'short' });
-}
-
-/** Visual editor for a note's frontmatter: tags, read-only dates, and custom
- *  key/value properties. Title stays in the toolbar. */
+/** Visual editor for a note's frontmatter: tags and custom key/value
+ *  properties. Title stays in the toolbar. Dates are internal metadata. */
 export default function FrontmatterEditor(props: { fm: Frontmatter; onChange: (fm: Frontmatter) => void }) {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const [open, setOpen] = createSignal(true);
   const [tagDraft, setTagDraft] = createSignal('');
   const [newKey, setNewKey] = createSignal('');
@@ -53,93 +47,118 @@ export default function FrontmatterEditor(props: { fm: Frontmatter; onChange: (f
     setNewKey('');
   };
 
-  const Row = (rp: { label: string; children: any }) => (
-    <div class="fm-row">
-      <span class="fm-label">{rp.label}</span>
-      <div style={{ flex: '1', 'min-width': '0' }}>{rp.children}</div>
-    </div>
-  );
-
   return (
-    <div style={{ 'border-bottom': '1px solid var(--surface0)' }}>
-      {/* Collapsible header */}
-      <button class="props-header" onClick={() => setOpen(v => !v)}>
-        <span style={{ 'font-size': '9px', transition: 'transform 0.15s', transform: open() ? 'rotate(90deg)' : 'rotate(0deg)' }}>▶</span>
-        {t('notes-fm-header')}
+    <div class="fm-editor">
+      {/* ── Collapsible header ─────────────────────────────────────────── */}
+      <button class="fm-editor-header" onClick={() => setOpen(v => !v)}>
+        <svg
+          class="fm-editor-chevron"
+          classList={{ 'fm-editor-chevron-open': open() }}
+          width="10" height="10" viewBox="0 0 24 24"
+          fill="none" stroke="currentColor" stroke-width="2.5"
+          stroke-linecap="round" stroke-linejoin="round"
+        >
+          <polyline points="9 18 15 12 9 6" />
+        </svg>
+        <span class="fm-editor-header-text">{t('notes-fm-header')}</span>
+        <span class="fm-editor-header-count">
+          {tags().length > 0 || customKeys().length > 0
+            ? `${tags().length + customKeys().length}`
+            : ''}
+        </span>
       </button>
 
-      <Show when={open()}>
-        <div class="frontmatter-editor" style={{
-          padding: '10px 14px', display: 'flex', 'flex-direction': 'column', gap: '6px',
-          background: 'var(--base)',
-        }}>
-          {/* Tags */}
-          <Row label={t('notes-fm-tags')}>
-        <div style={{ display: 'flex', 'flex-wrap': 'wrap', gap: '4px', 'align-items': 'center' }}>
-          <For each={tags()}>
-            {tag => (
-              <span class="fm-tag">
-                #{tag}
-                <button class="fm-tag-remove" onClick={() => removeTag(tag)} title={t('notes-fm-remove-tag')}>×</button>
-              </span>
-            )}
-          </For>
-          <input
-            type="text"
-            value={tagDraft()}
-            placeholder={t('notes-fm-add-tag')}
-            onInput={e => setTagDraft((e.target as HTMLInputElement).value)}
-            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addTag(); } }}
-            onBlur={addTag}
-            style={{ flex: '1', 'min-width': '80px', 'font-size': '11px', color: 'var(--text)', background: 'transparent' }}
-          />
-        </div>
-      </Row>
-
-      {/* Custom properties */}
-      <For each={customKeys()}>
-        {key => (
-          <Row label={key}>
-            <div style={{ display: 'flex', gap: '6px', 'align-items': 'center' }}>
-              <input
-                class="fm-input"
-                type="text"
-                value={String(props.fm[key] ?? '')}
-                onInput={e => setCustom(key, (e.target as HTMLInputElement).value)}
-              />
-              <button class="fm-tag-remove" onClick={() => removeCustom(key)} title={t('notes-fm-remove-prop')}>×</button>
+      {/* ── Body ────────────────────────────────────────────────────────── */}
+      <div
+        class="fm-editor-body"
+        classList={{ 'fm-editor-body-collapsed': !open() }}
+      >
+        <div class="fm-editor-body-inner">
+          {/* ── Tags ──────────────────────────────────────────────────────── */}
+          <div class="fm-section">
+            <div class="fm-section-label">{t('notes-fm-tags')}</div>
+            <div class="fm-section-content">
+              <div class="fm-tag-cloud">
+                <For each={tags()}>
+                  {tag => (
+                    <span class="fm-tag">
+                      <span class="fm-tag-hash">#</span>
+                      {tag}
+                      <button
+                        class="fm-tag-remove"
+                        onClick={() => removeTag(tag)}
+                        title={t('notes-fm-remove-tag')}
+                        aria-label={`${t('notes-fm-remove-tag')}: ${tag}`}
+                      >
+                        <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round">
+                          <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                        </svg>
+                      </button>
+                    </span>
+                  )}
+                </For>
+                <input
+                  type="text"
+                  class="fm-tag-input"
+                  value={tagDraft()}
+                  placeholder={t('notes-fm-add-tag')}
+                  onInput={e => setTagDraft((e.target as HTMLInputElement).value)}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addTag(); } }}
+                  onBlur={addTag}
+                />
+              </div>
             </div>
-          </Row>
-        )}
-      </For>
+          </div>
 
-      {/* Dates (read-only) */}
-      <Row label={t('notes-fm-created')}>
-        <span style={{ 'font-size': '11px', color: 'var(--subtext)' }}>{formatDate(props.fm.created, locale())}</span>
-      </Row>
-      <Row label={t('notes-fm-modified')}>
-        <span style={{ 'font-size': '11px', color: 'var(--subtext)' }}>{formatDate(props.fm.modified, locale())}</span>
-      </Row>
+          {/* ── Custom properties ───────────────────────────────────────── */}
+          <Show when={customKeys().length > 0}>
+            <div class="fm-section">
+              <For each={customKeys()}>
+                {key => (
+                  <div class="fm-field-row">
+                    <label class="fm-field-key">{key}</label>
+                    <div class="fm-field-value">
+                      <input
+                        class="fm-field-input"
+                        type="text"
+                        value={String(props.fm[key] ?? '')}
+                        spellcheck={false}
+                        onInput={e => setCustom(key, (e.target as HTMLInputElement).value)}
+                      />
+                      <button
+                        class="fm-field-remove"
+                        onClick={() => removeCustom(key)}
+                        title={t('notes-fm-remove-prop')}
+                      >
+                        <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round">
+                          <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </For>
+            </div>
+          </Show>
 
-      {/* Add property */}
-      <Row label="">
-        <div style={{ display: 'flex', gap: '6px', 'align-items': 'center' }}>
-          <input
-            class="fm-input"
-            type="text"
-            value={newKey()}
-            placeholder={t('notes-fm-add-prop')}
-            onInput={e => setNewKey((e.target as HTMLInputElement).value)}
-            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addProperty(); } }}
-            style={{ flex: '1' }}
-          />
-          <button class="fm-add-btn" onClick={addProperty}>
-            + {t('notes-fm-add')}
-          </button>
+          {/* ── Add property ──────────────────────────────────────────────── */}
+          <div class="fm-add-row">
+            <input
+              class="fm-field-input"
+              style={{ flex: '1', 'min-width': '100px' }}
+              type="text"
+              value={newKey()}
+              placeholder={t('notes-fm-add-prop')}
+              spellcheck={false}
+              onInput={e => setNewKey((e.target as HTMLInputElement).value)}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addProperty(); } }}
+            />
+            <button class="fm-add-btn" onClick={addProperty} disabled={!newKey().trim()}>
+              + {t('notes-fm-add')}
+            </button>
+          </div>
         </div>
-      </Row>
-        </div>
-      </Show>
+      </div>
     </div>
   );
 }

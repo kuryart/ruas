@@ -1,4 +1,4 @@
-import { For, Show, Switch, Match, createSignal, type JSX } from 'solid-js';
+import { For, Show, Switch, Match, type JSX } from 'solid-js';
 import {
   type Tab,
   closeTab,
@@ -8,7 +8,6 @@ import {
   focusedPanelId,
   panels,
   setActiveTab,
-  splitPanel,
   tree,
 } from './workspaceStore';
 import { leftPanelModule, toggleLeftVisible, rightVisible, toggleRight } from '../../stores/layoutStore';
@@ -17,6 +16,7 @@ import ContactsList from '../contacts/ContactsList';
 import ContactDetail from '../contacts/ContactDetail';
 import NotesList from '../notes/NotesList';
 import NoteDetail from '../notes/NoteDetail';
+import { getTabRenderer } from '../../stores/extensionsStore';
 
 // ── Tab icons ──────────────────────────────────────────────────────────────
 
@@ -60,6 +60,15 @@ function TabContent(props: { tab: Tab; panelId: string }) {
       <Match when={props.tab.content.type === 'placeholder'}>
         <PlaceholderView module={(props.tab.content as { type: 'placeholder'; module: string }).module} />
       </Match>
+      <Match when={props.tab.content.type === 'plugin'}>
+        {(() => {
+          const c = props.tab.content as { type: 'plugin'; pluginId: string; viewId: string; payload: unknown };
+          const reg = getTabRenderer(c.pluginId, c.viewId);
+          if (!reg) return <PlaceholderView module={c.pluginId} />;
+          const Comp = reg.component;
+          return <Comp payload={c.payload} />;
+        })()}
+      </Match>
     </Switch>
   );
 }
@@ -79,48 +88,10 @@ function PlaceholderView(props: { module: string }) {
 
 // ── Split menu ─────────────────────────────────────────────────────────────
 
-function SplitMenu(props: { panelId: string; onClose: () => void }) {
-  const { t } = useI18n();
-  const items = () => [
-    { label: t('panel-split-right'), dir: 'row' as const },
-    { label: t('panel-split-below'), dir: 'column' as const },
-  ];
-  return (
-    <div
-      style={{
-        position: 'absolute', top: '100%', right: '0',
-        background: 'var(--mantle)', border: '1px solid var(--surface1)',
-        'border-radius': 'var(--radius)', 'z-index': '100',
-        'box-shadow': '0 4px 16px rgba(0,0,0,0.4)',
-        padding: '4px', 'min-width': '160px',
-      }}
-      onClick={e => e.stopPropagation()}
-    >
-      <For each={items()}>
-        {item => (
-          <button
-            style={{
-              display: 'flex', 'align-items': 'center', gap: '8px',
-              width: '100%', padding: '6px 10px', 'border-radius': '4px',
-              'font-size': '12px', color: 'var(--text)',
-            }}
-            onMouseEnter={e => ((e.currentTarget as HTMLElement).style.background = 'var(--surface0)')}
-            onMouseLeave={e => ((e.currentTarget as HTMLElement).style.background = 'transparent')}
-            onClick={() => { splitPanel(props.panelId, item.dir); props.onClose(); }}
-          >
-            {item.label}
-          </button>
-        )}
-      </For>
-    </div>
-  );
-}
-
 // ── PanelView ──────────────────────────────────────────────────────────────
 
 export default function PanelView(props: { panelId: string }) {
   const { t } = useI18n();
-  const [showMenu, setShowMenu] = createSignal(false);
   const panel = () => panels[props.panelId];
   const isFocused = () => focusedPanelId() === props.panelId;
   const activeTab = () => panel()?.tabs.find(t => t.id === panel()?.activeTabId);
@@ -171,20 +142,6 @@ export default function PanelView(props: { panelId: string }) {
               );
             }}
           </For>
-        </div>
-
-        {/* Split button */}
-        <div class="panel-split">
-          <button
-            class="panel-split-btn"
-            title={t('panel-split-title')}
-            onClick={e => { e.stopPropagation(); setShowMenu(v => !v); }}
-          >
-            ⊞
-          </button>
-          <Show when={showMenu()}>
-            <SplitMenu panelId={props.panelId} onClose={() => setShowMenu(false)} />
-          </Show>
         </div>
 
         {/* Right-panel (outline / backlinks) toggle, only on the rightmost panel */}

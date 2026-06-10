@@ -34,3 +34,14 @@ settings-appearance-snippets-desc = Ative arquivos .css da pasta .ruas/snippets 
 settings-appearance-snippets-empty = Nenhum snippet ainda. Adicione arquivos .css em .ruas/snippets.
 settings-appearance-open-folder = Abrir pasta de snippets
 settings-appearance-reload = Recarregar
+
+# Categoria Plugins
+settings-category-plugins = Plugins
+settings-plugins-native = Plugins nativos
+settings-plugins-community = Plugins da comunidade
+settings-plugins-search = Buscar plugins…
+settings-plugins-empty = Nenhum plugin instalado.
+settings-plugins-community-enabled = Ativado
+settings-plugins-community-browse = Procurar
+settings-plugins-community-refresh = Atualizar
+settings-plugins-community-auto-update = Atualizar automaticamente

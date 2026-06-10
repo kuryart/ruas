@@ -59,6 +59,17 @@ const icons: Record<string, JSX.Element> = {
 const MODULE_IDS = ['contacts', 'agenda', 'calendar', 'notes', 'email', 'finances', 'projects'] as const;
 type ModuleId = (typeof MODULE_IDS)[number];
 
+// Per-module accent colors for the active indicator bar.
+const MODULE_ACCENTS: Record<ModuleId, string> = {
+  contacts: 'var(--pink)',
+  agenda: 'var(--peach)',
+  calendar: 'var(--blue)',
+  notes: 'var(--yellow)',
+  email: 'var(--teal)',
+  finances: 'var(--green)',
+  projects: 'var(--mauve)',
+};
+
 // Modules with a dedicated left-drawer browser toggle the drawer; the rest open
 // directly in the workspace.
 const DRAWER_MODULES = new Set<ModuleId>(['notes', 'contacts']);
@@ -73,11 +84,15 @@ function handleOpen(id: ModuleId, label: string) {
 function SidebarBtn(props: {
   title: string;
   active?: boolean;
+  accent?: string;
   onClick: () => void;
   children: JSX.Element;
 }) {
   return (
     <button class="sidebar-btn" classList={{ active: props.active }} title={props.title} onClick={props.onClick}>
+      {props.active && props.accent && (
+        <span class="sidebar-btn-indicator" style={{ 'background-color': props.accent }} />
+      )}
       <div>{props.children}</div>
     </button>
   );
@@ -94,7 +109,12 @@ export default function Sidebar() {
       {MODULE_IDS.map(id => {
         const label = () => t(`module-${id}`);
         return (
-          <SidebarBtn title={label()} active={leftPanelModule() === id} onClick={() => handleOpen(id, label())}>
+          <SidebarBtn
+            title={label()}
+            active={leftPanelModule() === id}
+            accent={MODULE_ACCENTS[id]}
+            onClick={() => handleOpen(id, label())}
+          >
             {icons[id]}
           </SidebarBtn>
         );

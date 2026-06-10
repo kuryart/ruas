@@ -211,6 +211,25 @@ impl IndexManager {
             .map_err(|e| format!("index: fts rebuild failed: {e}"))
     }
 
+    /// Purge all index entries for a given entity type within a directory.
+    /// Call this in `on_vault_open` **before** the additive scan so that
+    /// files deleted outside the app are cleaned up.
+    pub fn purge_entity_dir(&self, dir: &str, entity: &str) -> Result<(), String> {
+        let conn = self.db.lock().unwrap();
+        let pattern = format!("{}/%", dir.trim_end_matches('/'));
+        conn.execute(
+            "DELETE FROM fts WHERE path LIKE ?1 AND entity = ?2",
+            params![pattern, entity],
+        )
+        .map_err(|e| format!("index: purge entity fts: {e}"))?;
+        conn.execute(
+            "DELETE FROM files WHERE path LIKE ?1 AND entity = ?2",
+            params![pattern, entity],
+        )
+        .map_err(|e| format!("index: purge entity files: {e}"))?;
+        Ok(())
+    }
+
     // ── Read API ───────────────────────────────────────────────────────
 
     /// Full-text search across all indexed entities.

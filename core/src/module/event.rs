@@ -3,7 +3,7 @@
 /// Marked `#[non_exhaustive]` so adding variants never breaks dependent code —
 /// existing `match` arms just need a `_ => {}` wildcard.
 #[non_exhaustive]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub enum ModuleEvent {
     // ── Lifecycle ──────────────────────────────────────────────────────
     /// All modules have received `on_vault_open` successfully.

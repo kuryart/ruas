@@ -88,6 +88,44 @@ jobs:
         working-directory: frontend
         run: pnpm test
 
+  # ── Plugins: verify .wasm matches source ─────────────────────────────────
+  plugins:
+    name: Verify plugins
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Add wasm target
+        run: rustup target add wasm32-unknown-unknown
+
+      - name: Build all plugins and check diff
+        run: |
+          for d in plugins/*/; do
+            if [ ! -f "${d}Cargo.toml" ]; then continue; fi
+            name=$(basename "$d")
+            echo "Checking $name..."
+            (cd "$d" && cargo build --target wasm32-unknown-unknown --release)
+            wasm_name=$(echo "$name" | tr '-' '_')
+            src="$d/target/wasm32-unknown-unknown/release/${wasm_name}.wasm"
+            dest="${d}plugin.wasm"
+            if [ ! -f "$src" ]; then
+              echo "ERROR: .wasm not found at $src"
+              exit 1
+            fi
+            if ! cmp -s "$src" "$dest"; then
+              echo ""
+              echo "ERROR: plugin.wasm for '$name' is out of date."
+              echo "Run: ./scripts/build-plugins.sh"
+              echo "Then commit the updated plugin.wasm."
+              echo ""
+              exit 1
+            fi
+            echo "  ✓ $name is up to date"
+          done
+
   # ── E2E: Playwright against Astro dev server (no Tauri required) ──────────
   # Tests mock all API calls via page.route() — no Rust binary needed.
   e2e:

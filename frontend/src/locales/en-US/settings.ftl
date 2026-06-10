@@ -34,3 +34,14 @@ settings-appearance-snippets-desc = Toggle .css files from your vault's .ruas/sn
 settings-appearance-snippets-empty = No snippets yet. Add .css files to .ruas/snippets.
 settings-appearance-open-folder = Open snippets folder
 settings-appearance-reload = Reload
+
+# Plugins category
+settings-category-plugins = Plugins
+settings-plugins-native = Native plugins
+settings-plugins-community = Community plugins
+settings-plugins-search = Search plugins…
+settings-plugins-empty = No plugins installed.
+settings-plugins-community-enabled = Enabled
+settings-plugins-community-browse = Browse
+settings-plugins-community-refresh = Refresh
+settings-plugins-community-auto-update = Auto-update

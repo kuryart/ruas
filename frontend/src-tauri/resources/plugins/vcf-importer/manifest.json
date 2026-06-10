@@ -1,0 +1,10 @@
+{
+  "id": "com.ruas.vcf-importer",
+  "name": "VCF Importer",
+  "version": { "major": 0, "minor": 1, "patch": 0 },
+  "description": "Converts .vcf contact files to Ruas-compatible Markdown contacts and imports them directly into the vault. Use the action button in the right panel.",
+  "author": "Ruas",
+  "capabilities": ["VaultWrite"],
+  "kind": "wasm",
+  "entry_point": "plugin.wasm"
+}

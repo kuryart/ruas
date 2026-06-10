@@ -40,3 +40,7 @@ coverage/
 *.njsproj
 *.sln
 *.sw?
+
+# ── Useful ignores ──
+.temp/
+.obsidian/

@@ -52,6 +52,8 @@ pnpm dev          # apenas Astro, sem janela Tauri
 | [13-howto-new-ui-view.md](13-howto-new-ui-view.md) | Guia passo a passo para nova view no workspace |
 | [14-filename-strategy.md](14-filename-strategy.md) | Nomes de arquivo por título, sanitização, rename guard, fluxo completo |
 | [15-finances-module.md](15-finances-module.md) | Módulo de finanças — contas, transações, validação e linking com contatos |
+| [16-plugin-system.md](16-plugin-system.md) | Sistema de plugins — arquitetura, gap analysis e roadmap |
+| [17-plugin-pdk.md](17-plugin-pdk.md) | Plugin Development Kit — contrato WASM, funções exportadas, exemplo |
 
 Documentação adicional:
 - [../theming.md](../theming.md) — guia de temas e snippets CSS (foco no usuário)
