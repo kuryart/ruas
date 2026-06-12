@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createResource, createSignal, on } from 'solid-js';
+import { For, Show, createEffect, createResource, createSignal, on, onCleanup } from 'solid-js';
 import { useI18n } from '../../i18n/context';
 import { invoke } from '../../utils/api';
 import { pushHistory } from '../../stores/historyStore';
@@ -52,6 +52,8 @@ function loadCollapsed(): Set<string> {
 }
 
 function openNote(path: string, title: string, permanent: boolean) {
+  invoke('record_access', { path }).catch(() => {});
+  invoke('set_last_selected_entity', { path }).catch(() => {});
   if (permanent) openNotePermanent(path, title);
   else navigateToNote(path, title);
 }
@@ -64,6 +66,7 @@ type CtxTarget =
 export default function NotesList() {
   const { t, locale } = useI18n();
   const [query, setQuery] = createSignal('');
+  const [debouncedQuery, setDebouncedQuery] = createSignal('');
   const [creating, setCreating] = createSignal(false);
   const [collapsed, setCollapsed] = createSignal<Set<string>>(loadCollapsed());
   const [ctxMenu, setCtxMenu] = createSignal<{ x: number; y: number; target: CtxTarget } | null>(null);
@@ -74,6 +77,24 @@ export default function NotesList() {
   const [notes, { refetch: refetchNotes }] = createResource<NoteMeta[]>(() => invoke<NoteMeta[]>('list_notes'));
   const [tree, { refetch: refetchTree }] = createResource<TreeNode[]>(() => invoke<TreeNode[]>('list_notes_tree'));
   const [rootDir] = createResource(() => invoke<string>('get_notes_dir'));
+
+  // Debounce search: wait 150ms after last keystroke, then call backend.
+  let searchTimer: ReturnType<typeof setTimeout> | undefined;
+  createEffect(() => {
+    const q = query();
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => setDebouncedQuery(q), 150);
+  });
+  onCleanup(() => clearTimeout(searchTimer));
+
+  // Backend search results (via Tantivy + smart scorer when available).
+  const [searchResults] = createResource(
+    () => debouncedQuery(),
+    (q): Promise<NoteMeta[]> => {
+      if (!q.trim()) return Promise.resolve([]);
+      return invoke<NoteMeta[]>('search_notes', { query: q }).catch(() => []);
+    },
+  );
 
   const refetch = async () => { await Promise.all([refetchNotes(), refetchTree()]); };
 
@@ -246,13 +267,6 @@ export default function NotesList() {
     }
   }
 
-  const filtered = () => {
-    const q = query().toLowerCase();
-    return (notes() ?? []).filter(n =>
-      !q || n.title.toLowerCase().includes(q) || (n.tags ?? []).some(tag => tag.toLowerCase().includes(q)),
-    );
-  };
-
   // ── Tree row (recursive) ───────────────────────────────────────────────
   const TreeRow = (p: { node: TreeNode; depth: number }) => {
     const pad = () => `${10 + p.depth * 12}px`;
@@ -365,10 +379,10 @@ export default function NotesList() {
           </Show>
         }>
           <Show
-            when={filtered().length > 0}
+            when={(searchResults() ?? []).length > 0}
             fallback={<div style={{ padding: '20px', 'text-align': 'center', color: 'var(--muted)', 'font-size': '12px' }}>{t('notes-no-results')}</div>}
           >
-            <For each={filtered()}>
+            <For each={searchResults() ?? []}>
               {note => (
                 <div
                   class="note-list-item"

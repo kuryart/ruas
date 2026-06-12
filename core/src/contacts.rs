@@ -274,6 +274,94 @@ impl ContactsModule {
         serde_json::to_value(contact).map_err(|e| e.to_string())
     }
 
+    fn cmd_search(&self, query: &str, ctx: &VaultContext<'_>) -> DispatchResult {
+        let q = query.trim();
+        if q.is_empty() {
+            return self.cmd_list(ctx);
+        }
+
+        // Prefer Tantivy + smart scorer.
+        if let (Some(tantivy), Some(index)) = (ctx.tantivy(), ctx.index()) {
+            let raw_limit = crate::scorer::RAW_HIT_LIMIT;
+            let tantivy_hits = tantivy
+                .search_entity(q, Some("contact"), raw_limit)
+                .unwrap_or_default();
+
+            let last_path = ctx.last_selected_path();
+
+            let raw_results: Vec<crate::index::SearchResult> = tantivy_hits
+                .into_iter()
+                .map(|h| crate::index::SearchResult {
+                    path: h.path,
+                    uid: h.uid,
+                    entity: h.entity,
+                    title: h.title,
+                    snippet: String::new(),
+                    rank: h.bm25_score,
+                    bm25_score: h.bm25_score,
+                    final_score: h.bm25_score,
+                })
+                .collect();
+
+            match crate::scorer::apply_smart_scoring(raw_results, index, last_path.as_deref(), 30)
+            {
+                Ok(scored) => {
+                    let metas = scored
+                        .into_iter()
+                        .filter_map(|r| {
+                            std::fs::read_to_string(&r.path).ok().and_then(|content| {
+                                parse_contact(&r.path, &content)
+                                    .ok()
+                                    .map(|c| contact_to_meta(&c))
+                            })
+                        })
+                        .collect::<Vec<ContactMeta>>();
+                    return serde_json::to_value(metas).map_err(|e| e.to_string());
+                }
+                Err(e) => log::warn!("[contacts] smart scoring failed, falling back: {e}"),
+            }
+        }
+
+        // Fallback: FTS5 index.
+        if let Some(index) = ctx.index() {
+            if let Some(fts) = crate::notes::fts_query(q) {
+                if let Ok(results) = index.search_entity(&fts, "contact", 50) {
+                    let metas: Vec<ContactMeta> = results
+                        .into_iter()
+                        .filter_map(|r| {
+                            std::fs::read_to_string(&r.path).ok().and_then(|content| {
+                                parse_contact(&r.path, &content)
+                                    .ok()
+                                    .map(|c| contact_to_meta(&c))
+                            })
+                        })
+                        .collect();
+                    return serde_json::to_value(metas).map_err(|e| e.to_string());
+                }
+            }
+        }
+
+        // Last resort: filesystem scan with simple matching.
+        let dir = self.contacts_dir(ctx);
+        let q_lower = q.to_lowercase();
+        let mut metas: Vec<ContactMeta> = Vec::new();
+        for p in collect_md_files(&dir) {
+            if let Ok(content) = std::fs::read_to_string(&p) {
+                if let Ok(c) = parse_contact(&p.to_string_lossy(), &content) {
+                    let meta = contact_to_meta(&c);
+                    if meta.display_name.to_lowercase().contains(&q_lower)
+                        || meta.org.as_deref().map(|o| o.to_lowercase().contains(&q_lower)).unwrap_or(false)
+                        || meta.primary_email.as_deref().map(|e| e.to_lowercase().contains(&q_lower)).unwrap_or(false)
+                    {
+                        metas.push(meta);
+                    }
+                }
+            }
+        }
+        metas.sort_by(|a, b| a.display_name.cmp(&b.display_name));
+        serde_json::to_value(metas).map_err(|e| e.to_string())
+    }
+
     fn cmd_create(
         &self,
         given_name: String,
@@ -585,6 +673,17 @@ impl Module for ContactsModule {
                     description_key: "contacts-cmd-tree-desc".into(),
                     params: vec![],
                 },
+                CommandDescriptor {
+                    name: "search".into(),
+                    label_key: "contacts-cmd-search".into(),
+                    description_key: "contacts-cmd-search-desc".into(),
+                    params: vec![ParamDescriptor {
+                        name: "query".into(),
+                        kind: ParamKind::String,
+                        required: false,
+                        description_key: "contacts-param-query".into(),
+                    }],
+                },
             ]
         })
     }
@@ -631,6 +730,10 @@ impl Module for ContactsModule {
                 let path = args["path"].as_str().ok_or("missing required param: path")?;
                 let name = args["name"].as_str().ok_or("missing required param: name")?;
                 self.cmd_rename_folder(path, name, ctx)
+            }
+            "search" => {
+                let query = args["query"].as_str().unwrap_or("");
+                self.cmd_search(query, ctx)
             }
             _ => Err(format!("Unknown command: {command}")),
         }

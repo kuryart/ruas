@@ -140,6 +140,16 @@ pub fn rename_contact_folder(
     serde_json::from_value(result).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+pub fn search_contacts(
+    query: String,
+    state: tauri::State<VaultState>,
+    registry: tauri::State<RegistryState>,
+) -> Result<Vec<ContactMeta>, String> {
+    let result = dispatch(&state, &registry, "search", serde_json::json!({ "query": query }))?;
+    serde_json::from_value(result).map_err(|e| e.to_string())
+}
+
 // ── Internal helpers ───────────────────────────────────────────────────────
 
 /// Path to the contacts directory within a vault (used by seed and lib setup).
