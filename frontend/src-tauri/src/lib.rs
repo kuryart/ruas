@@ -224,6 +224,7 @@ fn set_module_settings(
 // ── Index commands ─────────────────────────────────────────────────────────
 
 /// Full-text search across all indexed vault entities.
+/// Uses Tantivy for BM25 scoring, then applies Frecency + Context scoring.
 #[tauri::command]
 fn search_index(
     query: String,
@@ -232,7 +233,63 @@ fn search_index(
 ) -> Result<Vec<ruas_core::SearchResult>, String> {
     let reg = registry.0.lock().unwrap();
     let idx = reg.index().ok_or("Nenhum cofre aberto")?;
-    idx.search(&query, limit.unwrap_or(20))
+    let tantivy = reg.tantivy().ok_or("Tantivy não disponível")?;
+
+    let limit = limit.unwrap_or(20);
+
+    // 1. Get raw BM25 hits from Tantivy (fetch more for re-scoring).
+    let raw_limit = (limit * 3).min(ruas_core::scorer::RAW_HIT_LIMIT);
+    let tantivy_hits = tantivy.search(&query, raw_limit)?;
+
+    // 2. Convert to SearchResult with bm25_score populated.
+    let raw_results: Vec<ruas_core::SearchResult> = tantivy_hits
+        .into_iter()
+        .map(|h| ruas_core::SearchResult {
+            path: h.path,
+            uid: h.uid,
+            entity: h.entity,
+            title: h.title,
+            snippet: String::new(), // Tantivy doesn't generate snippets yet
+            rank: h.bm25_score,
+            bm25_score: h.bm25_score,
+            final_score: h.bm25_score, // placeholder, scorer overrides
+        })
+        .collect();
+
+    // 3. Apply smart scoring (Frecency + Context).
+    let last_path = reg
+        .last_selected_arc()
+        .read()
+        .ok()
+        .and_then(|g| g.clone());
+
+    ruas_core::scorer::apply_smart_scoring(
+        raw_results,
+        idx,
+        last_path.as_deref(),
+        limit,
+    )
+}
+
+/// Record an access to a file (frecency tracking).
+/// Called as fire-and-forget from the frontend when a user opens an entity.
+#[tauri::command]
+fn record_access(
+    path: String,
+    registry: tauri::State<RegistryState>,
+) -> Result<(), String> {
+    let reg = registry.0.lock().unwrap();
+    reg.record_access(&path)
+}
+
+/// Set the last entity the user selected (for context-based search scoring).
+#[tauri::command]
+fn set_last_selected_entity(
+    path: Option<String>,
+    registry: tauri::State<RegistryState>,
+) {
+    let reg = registry.0.lock().unwrap();
+    reg.set_last_selected(path);
 }
 
 /// Resolve a `ruas://` UID to its current file path.
@@ -309,6 +366,8 @@ pub fn run() {
             // Index queries
             search_index,
             resolve_uid,
+            record_access,
+            set_last_selected_entity,
             // Vault management
             vault::select_folder,
             vault::new_vault,
@@ -326,6 +385,7 @@ pub fn run() {
             contacts::move_contact,
             contacts::get_contacts_dir,
             contacts::rename_contact_folder,
+            contacts::search_contacts,
             // Typed notes commands (thin adapters over invoke_module)
             notes::list_notes,
             notes::read_note,

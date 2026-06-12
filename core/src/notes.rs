@@ -451,7 +451,58 @@ impl NotesModule {
     }
 
     fn cmd_search(&self, query: &str, ctx: &VaultContext<'_>) -> DispatchResult {
-        // Prefer the FTS5 index; fall back to a filesystem scan if unavailable.
+        // Prefer Tantivy + smart scorer; fall back to FTS5 / filesystem.
+        if let (Some(tantivy), Some(index)) = (ctx.tantivy(), ctx.index()) {
+            let q = query.trim();
+            if q.is_empty() {
+                return self.cmd_list(ctx);
+            }
+
+            log::info!("[notes] Tantivy search: query='{q}'");
+
+            let raw_limit = crate::scorer::RAW_HIT_LIMIT;
+            let tantivy_hits = tantivy
+                .search_entity(q, Some("note"), raw_limit)
+                .unwrap_or_default();
+
+            log::info!("[notes] Tantivy raw hits: {}, scoring...", tantivy_hits.len());
+
+            let last_path = ctx.last_selected_path();
+
+            let raw_results: Vec<crate::index::SearchResult> = tantivy_hits
+                .into_iter()
+                .map(|h| crate::index::SearchResult {
+                    path: h.path,
+                    uid: h.uid,
+                    entity: h.entity,
+                    title: h.title,
+                    snippet: String::new(),
+                    rank: h.bm25_score,
+                    bm25_score: h.bm25_score,
+                    final_score: h.bm25_score,
+                })
+                .collect();
+
+            match crate::scorer::apply_smart_scoring(raw_results, index, last_path.as_deref(), 30)
+            {
+                Ok(scored) => {
+                    let metas: Vec<NoteMeta> = scored
+                        .into_iter()
+                        .map(|r| NoteMeta {
+                            path: r.path,
+                            title: r.title.unwrap_or_else(|| "Untitled".to_string()),
+                            tags: None,
+                            modified: None,
+                        })
+                        .collect();
+                    return serde_json::to_value(metas).map_err(|e| e.to_string());
+                }
+                Err(e) => log::warn!("[notes] smart scoring failed, falling back: {e}"),
+            }
+        }
+
+        // Fallback: FTS5 index or filesystem scan.
+        log::info!("[notes] Tantivy unavailable or failed — using fallback for query='{query}'");
         if let Some(index) = ctx.index() {
             match fts_query(query) {
                 Some(fts) => {
@@ -468,7 +519,6 @@ impl NotesModule {
                         return serde_json::to_value(metas).map_err(|e| e.to_string());
                     }
                 }
-                // Empty/symbol-only query → list everything (most-recent first).
                 None => return self.cmd_list(ctx),
             }
         }

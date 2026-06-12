@@ -54,6 +54,7 @@ pnpm dev          # apenas Astro, sem janela Tauri
 | [15-finances-module.md](15-finances-module.md) | Módulo de finanças — contas, transações, validação e linking com contatos |
 | [16-plugin-system.md](16-plugin-system.md) | Sistema de plugins — arquitetura, gap analysis e roadmap |
 | [17-plugin-pdk.md](17-plugin-pdk.md) | Plugin Development Kit — contrato WASM, funções exportadas, exemplo |
+| [17-search-architecture.md](17-search-architecture.md) | Arquitetura de busca inteligente — CQRS, Tantivy, scoring, frecency |
 
 Documentação adicional:
 - [../theming.md](../theming.md) — guia de temas e snippets CSS (foco no usuário)
@@ -71,7 +72,11 @@ Documentação adicional:
 | **tab** | Aba dentro de um panel. Pode ser _preview_ (itálico, substituível) ou _permanente_. |
 | **preview tab** | Tab aberta por single-click; é reutilizada/substituída na próxima navegação. Promovida a permanente ao editar. |
 | **ruas:// URI** | Formato `ruas://entity/[UUID]` para links internos. O índice SQLite mapeia UUID → caminho em disco. |
-| **FTS5** | Extensão de full-text search do SQLite, usada como motor de busca do índice. |
+| **FTS5** | Extensão de full-text search do SQLite, usada como fallback de busca. |
+| **Tantivy** | Motor de FTS em Rust — read-side do CQRS com BM25, stemming, fuzzy finding. |
+| **Outbox** | Tabela no libSQL que funciona como fila de tarefas para o IndexWorker processar no Tantivy. |
+| **Frecency** | Métrica de relevância combinando frequência (`times_opened`) e recência (`last_access`). |
+| **Pop & Mutate** | Pipeline de ingestão que extrai `tags` e `aliases` do frontmatter antes de indexar no Tantivy. |
 | **VaultContext** | Struct passada a todo dispatch de módulo; fornece `vault_path`, `events` e acesso ao índice. |
 | **TabContent** | Union type TypeScript que identifica o tipo de conteúdo de uma tab (ex: `note-detail`, `contact-detail`). |
 | **WorkspaceNode** | Nó na árvore binária de layout: `LeafNode` (panel) ou `SplitNode` (divisão horizontal/vertical). |

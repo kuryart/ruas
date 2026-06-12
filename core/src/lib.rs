@@ -2,9 +2,12 @@ pub mod appearance;
 pub mod contacts;
 pub mod filename;
 pub mod index;
+pub mod index_worker;
 pub mod module;
 pub mod notes;
 pub mod plugin;
+pub mod scorer;
+pub mod tantivy_index;
 pub mod vault;
 
 pub use appearance::{
@@ -35,5 +38,5 @@ pub use module::{
     ModuleSettings, SelectOption, SettingField, SettingKind,
 };
 pub use filename::{sanitize_filename, unique_filename};
-pub use index::{IndexManager, SearchResult};
+pub use index::{IndexManager, OutboxEntry, SearchResult};
 pub use vault::{VaultConfig, create_vault, validate_vault};

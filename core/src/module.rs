@@ -63,6 +63,10 @@ pub struct VaultContext<'a> {
     pub events: &'a dyn EventSink,
     /// Shared SQLite index — `None` when the index is unavailable (e.g. tests).
     index: Option<Arc<IndexManager>>,
+    /// Shared Tantivy FTS index — `None` when unavailable (e.g. tests).
+    tantivy: Option<Arc<crate::tantivy_index::TantivyManager>>,
+    /// Path of the last entity the user selected (for context scoring).
+    last_selected_entity: Option<Arc<std::sync::RwLock<Option<String>>>>,
     /// Set of paths the app is currently renaming on disk.
     /// The file watcher checks this before processing `FileDeleted` events so
     /// that programmatic renames don't corrupt the index.
@@ -72,12 +76,36 @@ pub struct VaultContext<'a> {
 impl<'a> VaultContext<'a> {
     /// Standard constructor. Index is not available — use `with_index` to add it.
     pub fn new(vault_path: &'a Path, events: &'a dyn EventSink) -> Self {
-        Self { vault_path, events, index: None, rename_guard: None }
+        Self {
+            vault_path, events,
+            index: None,
+            tantivy: None,
+            last_selected_entity: None,
+            rename_guard: None,
+        }
     }
 
     /// Attach the shared index to this context (called by the registry).
     pub(crate) fn with_index(mut self, index: Arc<IndexManager>) -> Self {
         self.index = Some(index);
+        self
+    }
+
+    /// Attach the shared Tantivy index (called by the registry).
+    pub(crate) fn with_tantivy(
+        mut self,
+        tantivy: Arc<crate::tantivy_index::TantivyManager>,
+    ) -> Self {
+        self.tantivy = Some(tantivy);
+        self
+    }
+
+    /// Attach the last-selected-entity tracker (called by the registry).
+    pub(crate) fn with_last_selected(
+        mut self,
+        lock: Arc<std::sync::RwLock<Option<String>>>,
+    ) -> Self {
+        self.last_selected_entity = Some(lock);
         self
     }
 
@@ -93,6 +121,19 @@ impl<'a> VaultContext<'a> {
     /// Access the SQLite index. Returns `None` when unavailable (no vault, test context).
     pub fn index(&self) -> Option<&IndexManager> {
         self.index.as_deref()
+    }
+
+    /// Access the Tantivy FTS index.
+    pub fn tantivy(&self) -> Option<&crate::tantivy_index::TantivyManager> {
+        self.tantivy.as_deref()
+    }
+
+    /// Path of the last entity the user selected (for context scoring).
+    pub fn last_selected_path(&self) -> Option<String> {
+        self.last_selected_entity
+            .as_ref()
+            .and_then(|lock| lock.read().ok())
+            .and_then(|g| g.clone())
     }
 
     /// Register `old_path` as an in-progress programmatic rename.
@@ -208,6 +249,12 @@ pub struct ModuleRegistry {
     entries: Vec<RegistryEntry>,
     /// Shared SQLite index — set on vault open, cleared on vault close.
     index: Option<Arc<IndexManager>>,
+    /// Shared Tantivy FTS index — set on vault open, cleared on vault close.
+    tantivy: Option<Arc<crate::tantivy_index::TantivyManager>>,
+    /// Wake signal for the async index worker (Tantivy outbox processor).
+    wake_tx: Option<tokio::sync::mpsc::UnboundedSender<()>>,
+    /// Path of the last entity the user clicked on (for context multiplier).
+    last_selected_entity: Arc<std::sync::RwLock<Option<String>>>,
     /// Shared rename guard — set by the Tauri layer so that programmatic
     /// file renames don't trigger spurious `FileDeleted` index removals.
     rename_guard: Option<Arc<std::sync::Mutex<std::collections::HashSet<String>>>>,
@@ -215,7 +262,14 @@ pub struct ModuleRegistry {
 
 impl ModuleRegistry {
     pub fn new() -> Self {
-        Self { entries: Vec::new(), index: None, rename_guard: None }
+        Self {
+            entries: Vec::new(),
+            index: None,
+            tantivy: None,
+            wake_tx: None,
+            last_selected_entity: Arc::new(std::sync::RwLock::new(None)),
+            rename_guard: None,
+        }
     }
 
     /// Access the active index (if a vault is open).
@@ -226,6 +280,38 @@ impl ModuleRegistry {
     /// Cloneable handle to the index — passed to file watcher threads.
     pub fn index_arc(&self) -> Option<Arc<IndexManager>> {
         self.index.clone()
+    }
+
+    /// Access the active Tantivy index (if a vault is open).
+    pub fn tantivy(&self) -> Option<&crate::tantivy_index::TantivyManager> {
+        self.tantivy.as_deref()
+    }
+
+    /// Cloneable handle to the Tantivy index.
+    pub fn tantivy_arc(&self) -> Option<Arc<crate::tantivy_index::TantivyManager>> {
+        self.tantivy.clone()
+    }
+
+    /// Cloneable handle to the last-selected-entity path.
+    pub fn last_selected_arc(&self) -> Arc<std::sync::RwLock<Option<String>>> {
+        Arc::clone(&self.last_selected_entity)
+    }
+
+    /// Set the path of the last entity the user selected (for context scoring).
+    pub fn set_last_selected(&self, path: Option<String>) {
+        if let Ok(mut guard) = self.last_selected_entity.write() {
+            *guard = path;
+        }
+    }
+
+    /// Record an access to a file (increments `times_opened`, sets `last_access`).
+    pub fn record_access(&self, path: &str) -> Result<(), String> {
+        if let Some(idx) = &self.index {
+            idx.record_access(path)?;
+            // Check aging threshold
+            let _ = crate::scorer::maybe_age_frecency(idx);
+        }
+        Ok(())
     }
 
     /// Attach the rename guard. Called once by the Tauri layer after building
@@ -338,6 +424,11 @@ impl ModuleRegistry {
             Some(idx) => ctx.with_index(Arc::clone(idx)),
             None => ctx,
         };
+        let ctx = match &self.tantivy {
+            Some(t) => ctx.with_tantivy(Arc::clone(t)),
+            None => ctx,
+        };
+        let ctx = ctx.with_last_selected(Arc::clone(&self.last_selected_entity));
         match &self.rename_guard {
             Some(guard) => ctx.with_rename_guard(Arc::clone(guard)),
             None => ctx,
@@ -376,14 +467,32 @@ impl ModuleRegistry {
 
     // ── Lifecycle broadcasting ─────────────────────────────────────────
 
-    /// Open the vault: create the SQLite index, run `on_vault_open` on all
-    /// modules (capability-failing modules are skipped), then broadcast
-    /// `VaultOpened`. Returns `(module_id, error)` pairs for any failures.
+    /// Open the vault: create the SQLite index, open Tantivy, spawn the
+    /// async index worker, run `on_vault_open` on all modules (capability-
+    /// failing modules are skipped), then broadcast `VaultOpened`.
+    /// Returns `(module_id, error)` pairs for any failures.
     pub fn on_vault_open(&mut self, vault_path: &Path) -> Vec<(String, String)> {
-        // 1. Open the index first so modules can use it in on_vault_open
+        // 1. Open libSQL index
         match IndexManager::open(vault_path) {
             Ok(idx) => self.index = Some(Arc::new(idx)),
             Err(e) => log::error!("Failed to open index: {e}"),
+        }
+
+        // 2. Open Tantivy index
+        match crate::tantivy_index::TantivyManager::open(vault_path) {
+            Ok(tantivy) => {
+                let tantivy_arc = Arc::new(tantivy);
+                self.tantivy = Some(Arc::clone(&tantivy_arc));
+                // 3. Spawn async index worker (Tantivy writer)
+                if let Some(idx) = &self.index {
+                    let tx = crate::index_worker::IndexWorker::spawn(
+                        Arc::clone(idx),
+                        tantivy_arc,
+                    );
+                    self.wake_tx = Some(tx);
+                }
+            }
+            Err(e) => log::error!("Failed to open Tantivy: {e}"),
         }
 
         let sink = BufferedSink::new();
@@ -410,7 +519,7 @@ impl ModuleRegistry {
     }
 
     /// Close the vault: broadcast `VaultClosed`, run `on_vault_close` on all
-    /// modules, then release the SQLite index.
+    /// modules, then release the SQLite index, Tantivy index, and worker.
     pub fn on_vault_close(&mut self, vault_path: &Path) {
         self.broadcast(&ModuleEvent::VaultClosed, vault_path);
         let noop = NoopSink;
@@ -418,6 +527,9 @@ impl ModuleRegistry {
             let ctx = self.make_ctx(vault_path, &noop);
             entry.module.on_vault_close(&ctx);
         }
+        // Drop wake sender → worker shuts down gracefully.
+        self.wake_tx = None;
+        self.tantivy = None;
         self.index = None; // drops the Arc; connection closes when last clone is gone
     }
 

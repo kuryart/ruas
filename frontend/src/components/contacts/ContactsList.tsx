@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createResource, createSignal } from 'solid-js';
+import { For, Show, createEffect, createResource, createSignal, onCleanup } from 'solid-js';
 import { useI18n } from '../../i18n/context';
 import { invoke } from '../../utils/api';
 import { pushHistory } from '../../stores/historyStore';
@@ -55,6 +55,7 @@ export default function ContactsList() {
   const { t } = useI18n();
 
   const [query, setQuery] = createSignal('');
+  const [debouncedQuery, setDebouncedQuery] = createSignal('');
   // Re-fetch whenever any contact is mutated (ContactDetail calls invalidateContacts).
   const [contacts, { refetch }] = createResource<ContactMeta[], number>(
     contactsVersion,
@@ -63,7 +64,33 @@ export default function ContactsList() {
   const [tree, { refetch: refetchTree }] = createResource<TreeNode[]>(() => invoke<TreeNode[]>('list_contacts_tree'));
   const [rootDir] = createResource(() => invoke<string>('get_contacts_dir'));
 
+  // Debounce search: 150ms after last keystroke.
+  let searchTimer: ReturnType<typeof setTimeout> | undefined;
+  createEffect(() => {
+    const q = query();
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => setDebouncedQuery(q), 150);
+  });
+  onCleanup(() => clearTimeout(searchTimer));
+
+  // Backend search via Tantivy + smart scorer.
+  const [searchResults] = createResource(
+    () => debouncedQuery(),
+    (q): Promise<ContactMeta[]> => {
+      if (!q.trim()) return Promise.resolve([]);
+      return invoke<ContactMeta[]>('search_contacts', { query: q }).catch(() => []);
+    },
+  );
+
   const refetchAll = async () => { await Promise.all([refetch(), refetchTree()]); };
+
+  // Fire-and-forget tracking when the user opens a contact.
+  function openContact(path: string, displayName: string, permanent: boolean) {
+    invoke('record_access', { path }).catch(() => {});
+    invoke('set_last_selected_entity', { path }).catch(() => {});
+    if (permanent) openContactPermanent(path, displayName);
+    else navigateToContact(path, displayName);
+  }
 
   const [collapsed, setCollapsed] = createSignal<Set<string>>(loadCollapsed());
 
@@ -193,15 +220,6 @@ export default function ContactsList() {
     }).catch(e => window.alert(String(e))).finally(() => setCreating(false));
   }
 
-  const filtered = () => {
-    const q = query().toLowerCase();
-    return (contacts() ?? []).filter(c =>
-      !q ||
-      c.display_name.toLowerCase().includes(q) ||
-      (c.org ?? '').toLowerCase().includes(q) ||
-      (c.primary_email ?? '').toLowerCase().includes(q),
-    );
-  };
 
   return (
     <div class="contact-list" onContextMenu={e => openCtxMenu(e, { kind: 'empty' })}>
@@ -322,7 +340,7 @@ export default function ContactsList() {
               when={(tree() ?? []).length > 0}
               fallback={<div style={{ padding: '20px', 'text-align': 'center', color: 'var(--muted)', 'font-size': '12px' }}>{t('contacts-empty')}</div>}
             >
-              <For each={tree()}>{node => <ContactTreeRow node={node} depth={0} collapsed={collapsed()} toggleDir={toggleDir} openCtxMenu={openCtxMenu} dragOverFolder={dragOverFolder()} onDragStartContact={onDragStartContact} onDragStartFolder={onDragStartFolder} onDragOverFolder={onDragOverFolder} onDragLeaveFolder={onDragLeaveFolder} onDropFolder={onDropFolder} />}</For>
+              <For each={tree()}>{node => <ContactTreeRow node={node} depth={0} collapsed={collapsed()} toggleDir={toggleDir} openCtxMenu={openCtxMenu} dragOverFolder={dragOverFolder()} onDragStartContact={onDragStartContact} onDragStartFolder={onDragStartFolder} onDragOverFolder={onDragOverFolder} onDragLeaveFolder={onDragLeaveFolder} onDropFolder={onDropFolder} onOpenContact={openContact} />}</For>
             </Show>
           </Show>
         }>
@@ -331,21 +349,18 @@ export default function ContactsList() {
             fallback={<div style={{ padding: '20px', 'text-align': 'center', color: 'var(--muted)', 'font-size': '12px' }}>{t('contacts-loading')}</div>}
           >
             <Show
-              when={filtered().length > 0}
+              when={(searchResults() ?? []).length > 0}
               fallback={<div style={{ padding: '20px', 'text-align': 'center', color: 'var(--muted)', 'font-size': '12px' }}>{t('contacts-no-results')}</div>}
             >
-              <For each={filtered()}>
+              <For each={searchResults() ?? []}>
                 {contact => {
                   const color = avatarColor(contact.initials);
                   return (
                     <div
                       class="contact-list-item"
                       onClick={e => {
-                        if (e.ctrlKey || e.metaKey) {
-                          openContactPermanent(contact.path, contact.display_name);
-                        } else {
-                          navigateToContact(contact.path, contact.display_name);
-                        }
+                        const perm = e.ctrlKey || e.metaKey;
+                        openContact(contact.path, contact.display_name, perm);
                       }}
                       onContextMenu={e => openCtxMenu(e, { kind: 'contact', path: contact.path, display_name: contact.display_name })}
                     >
@@ -393,6 +408,7 @@ function ContactTreeRow(props: {
   onDragOverFolder: (e: DragEvent, path: string) => void;
   onDragLeaveFolder: () => void;
   onDropFolder: (e: DragEvent, path: string) => void;
+  onOpenContact: (path: string, displayName: string, permanent: boolean) => void;
 }) {
   const pad = () => `${10 + props.depth * 12}px`;
   return (
@@ -405,8 +421,8 @@ function ContactTreeRow(props: {
           draggable="true"
           onDragStart={e => props.onDragStartContact(e, props.node.path)}
           onClick={e => {
-            if (e.ctrlKey || e.metaKey) openContactPermanent(props.node.path, props.node.name);
-            else navigateToContact(props.node.path, props.node.name);
+            const perm = e.ctrlKey || e.metaKey;
+            props.onOpenContact(props.node.path, props.node.name, perm);
           }}
           onContextMenu={e => props.openCtxMenu(e, { kind: 'contact', path: props.node.path, display_name: props.node.name })}
         >
@@ -441,7 +457,7 @@ function ContactTreeRow(props: {
         <span class="truncate" style={{ 'font-size': '13px', 'font-weight': '500', color: 'var(--subtext)' }}>{props.node.name}</span>
       </div>
       <Show when={!props.collapsed.has(props.node.path)}>
-        <For each={props.node.children}>{child => <ContactTreeRow node={child} depth={props.depth + 1} collapsed={props.collapsed} toggleDir={props.toggleDir} openCtxMenu={props.openCtxMenu} dragOverFolder={props.dragOverFolder} onDragStartContact={props.onDragStartContact} onDragStartFolder={props.onDragStartFolder} onDragOverFolder={props.onDragOverFolder} onDragLeaveFolder={props.onDragLeaveFolder} onDropFolder={props.onDropFolder} />}</For>
+        <For each={props.node.children}>{child => <ContactTreeRow node={child} depth={props.depth + 1} collapsed={props.collapsed} toggleDir={props.toggleDir} openCtxMenu={props.openCtxMenu} dragOverFolder={props.dragOverFolder} onDragStartContact={props.onDragStartContact} onDragStartFolder={props.onDragStartFolder} onDragOverFolder={props.onDragOverFolder} onDragLeaveFolder={props.onDragLeaveFolder} onDropFolder={props.onDropFolder} onOpenContact={props.onOpenContact} />}</For>
       </Show>
     </Show>
   );

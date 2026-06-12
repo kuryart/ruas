@@ -7,26 +7,34 @@ import { openNotePermanent } from '../workspace/workspaceStore';
 
 interface NoteMeta { path: string; title: string }
 
-/** Global quick-open palette (Ctrl+P): fuzzy-search notes by title and open. */
+/** Global quick-open palette (Ctrl+P): backend search with debounce. */
 export default function CommandPalette() {
   const { t } = useI18n();
   const [query, setQuery] = createSignal('');
   const [results, setResults] = createSignal<NoteMeta[]>([]);
   const [selected, setSelected] = createSignal(0);
+  const [loading, setLoading] = createSignal(false);
   let inputRef: HTMLInputElement | undefined;
   let token = 0;
+  let timer: ReturnType<typeof setTimeout> | undefined;
 
   const close = () => { setPaletteOpen(false); setQuery(''); setResults([]); setSelected(0); };
 
-  // Fetch results whenever the palette opens or the query changes.
+  // Debounced backend search — 150ms after last keystroke.
   createEffect(() => {
     if (!paletteOpen()) return;
     const q = query();
+    clearTimeout(timer);
     const my = ++token;
-    invoke<NoteMeta[]>('search_notes', { query: q })
-      .then(r => { if (my === token) { setResults(r); setSelected(0); } })
-      .catch(() => { if (my === token) setResults([]); });
+    setLoading(true);
+    timer = setTimeout(() => {
+      invoke<NoteMeta[]>('search_notes', { query: q })
+        .then(r => { if (my === token) { setResults(r); setSelected(0); setLoading(false); } })
+        .catch(() => { if (my === token) { setResults([]); setLoading(false); } });
+    }, 150);
   });
+
+  onCleanup(() => clearTimeout(timer));
 
   // Focus the input on open.
   createEffect(() => {
@@ -34,6 +42,9 @@ export default function CommandPalette() {
   });
 
   function pick(note: NoteMeta) {
+    // Fire-and-forget: track frecency and context.
+    invoke('record_access', { path: note.path }).catch(() => {});
+    invoke('set_last_selected_entity', { path: note.path }).catch(() => {});
     openNotePermanent(note.path, note.title);
     close();
   }
